@@ -25,10 +25,11 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pyinstaller pillow
+        pip install --upgrade importlib-metadata
     
     - name: Build executable
       run: |
-        pyinstaller --onefile --windowed --name "Koios" --icon="Koïos_Logo.png" --add-data "templates:templates" --add-data "core:core" --add-data "ui:ui" --add-data "utils:utils" --add-data "styles.css:." --hidden-import=streamlit app.py
+        pyinstaller --onefile --windowed --name "Koios" --icon="Koïos_Logo.png" --add-data "templates:templates" --add-data "core:core" --add-data "ui:ui" --add-data "utils:utils" --add-data "styles.css:." --collect-all streamlit --collect-all numpy --collect-all pandas --hidden-import=streamlit --hidden-import=altair --hidden-import=watchdog app.py
     
     - name: Create DMG
       run: |
