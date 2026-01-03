@@ -5,10 +5,15 @@ secondaryBackgroundColor = "#1a1d26"
 textColor = "#FAFAFA"
 font = "sans serif"
 
+[browser]
+gatherUsageStats = false
+
 [server]
 headless = true
-address = "0.0.0.0"
+address = "localhost"
 port = 5000
+enableXsrfProtection = false
+baseUrlPath = ""
 
 [client]
 showErrorDetails = false
