@@ -20,14 +20,14 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libgl1-mesa-glx libxkbcommon-x11-0
+        sudo apt-get install -y libxkbcommon-x11-0 libdbus-1-3 libfontconfig1
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pyinstaller
+        pip install pyinstaller pillow
     
     - name: Build executable
       run: |
-        pyinstaller --onefile --name "Koios" --icon=Koïos_Logo.png --add-data "templates:templates" --add-data "core:core" --add-data "ui:ui" --add-data "utils:utils" --add-data "styles.css:." app.py
+        pyinstaller --onefile --name "Koios" --icon="Koïos_Logo.png" --add-data "templates:templates" --add-data "core:core" --add-data "ui:ui" --add-data "utils:utils" --add-data "styles.css:." --hidden-import=streamlit app.py
     
     - name: Create tar.gz archive
       run: |
