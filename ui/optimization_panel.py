@@ -4,6 +4,15 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from core.optimization_algorithms_engine import OptimizationAlgorithmsEngine, OptimizationType
 from utils.ui_helpers import run_task, copy_button
+from utils.exceptions import ConvergenceError, InvalidInputError
+
+# Example optimization problems
+OPTIMIZATION_EXAMPLES = {
+    "Paraboloid": {"function": "x**2 + y**2", "vars": "x,y"},
+    "Rosenbrock": {"function": "(1-x)**2 + 100*(y-x**2)**2", "vars": "x,y"},
+    "Saddle Point": {"function": "x**2 - y**2", "vars": "x,y"},
+    "3D Paraboloid": {"function": "x**2 + y**2 + z**2", "vars": "x,y,z"},
+}
 
 def render_multivariable_optimization():
     """Render multivariable optimization section"""

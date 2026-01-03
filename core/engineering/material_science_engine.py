@@ -6,6 +6,9 @@ import scipy.constants as const
 from scipy.optimize import minimize
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from utils.exceptions import (
+    InvalidInputError, ConfigurationError, DomainError, NumericalInstabilityError
+)
 
 class CrystalSystem(Enum):
     """Seven crystal systems"""

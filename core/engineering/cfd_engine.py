@@ -6,6 +6,9 @@ import scipy.sparse as sp
 from scipy.sparse.linalg import spsolve, gmres
 import matplotlib.pyplot as plt
 from matplotlib import cm
+from utils.exceptions import (
+    InvalidInputError, ConvergenceError, ConfigurationError, NumericalInstabilityError
+)
 
 class FlowType(Enum):
     """Types of fluid flow"""

@@ -3,15 +3,12 @@ import sys
 import os
 from pathlib import Path
 
-# Add all module paths
+# Add project root to path for proper package imports
 current_dir = Path(__file__).parent
-sys.path.extend([
-    str(current_dir / "core"),
-    str(current_dir / "ui"),
-    str(current_dir / "utils")
-])
+if str(current_dir) not in sys.path:
+    sys.path.insert(0, str(current_dir))
 
-# Import core modules
+# Import UI panels using proper package imports
 try:
     from ui.calculator_panel import render_calculator_panel
     from ui.matrix_panel import render_matrix_panel
@@ -31,12 +28,14 @@ except ImportError as e:
 
 def main():
     """Main application entry point"""
-    # Get logo path
-    logo_path = str(current_dir / "Koïos_Logo.png")
+    # Get logo path with existence check
+    logo_path = current_dir / "Koïos_Logo.png"
+    logo_exists = logo_path.exists()
+    page_icon = "📊" if not logo_exists else str(logo_path)
     
     st.set_page_config(
         page_title="Koios - Advanced Mathematical Toolset",
-        page_icon=logo_path,
+        page_icon=page_icon,
         layout="wide",
         initial_sidebar_state="expanded"
     )
@@ -187,14 +186,22 @@ def main():
     # Header with logo
     col1, col2 = st.columns([1, 8])
     with col1:
-        st.image(logo_path, width=80)
+        if logo_exists:
+            st.image(str(logo_path), width=80)
+        else:
+            st.markdown("<h1 style='text-align: center; margin-top: 0.5rem;'>📊</h1>", unsafe_allow_html=True)
     with col2:
         st.markdown("<h1 style='margin-top: 0; margin-bottom: 0.2rem;'>Koios</h1>", unsafe_allow_html=True)
         st.markdown("<p style='color: #B0BEC5; font-size: 1rem; margin: 0;'>Advanced Mathematical Toolset</p>", unsafe_allow_html=True)
         st.markdown("<p style='color: #78909C; font-size: 0.85rem; margin-top: 0.3rem;'>Comprehensive mathematical computation platform with advanced capabilities</p>", unsafe_allow_html=True)
     
     if not MODULES_LOADED:
-        st.error("Failed to load core modules. Please check the installation.")
+        st.error("⚠️ Failed to load core modules. Please check the installation.")
+        st.info("""**Troubleshooting:**
+        1. Ensure all dependencies are installed: `pip install -r requirements.txt`
+        2. Check that all module files exist in the correct directories
+        3. Review the error message above for specific import failures
+        """)
         return
     
     # Sidebar navigation

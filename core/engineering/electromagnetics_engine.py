@@ -6,6 +6,9 @@ import scipy.constants as const
 from scipy.special import jv, yv, hankel1
 import matplotlib.pyplot as plt
 from matplotlib import cm
+from utils.exceptions import (
+    InvalidInputError, ConvergenceError, ConfigurationError, NumericalInstabilityError
+)
 
 class FieldType(Enum):
     """Types of electromagnetic fields"""

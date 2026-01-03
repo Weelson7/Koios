@@ -5,7 +5,16 @@ from core.calculation_engine import calculation_engine
 from core.expression_parser import expression_parser
 from utils.ui_helpers import run_task, copy_button
 from utils.math_helpers import MathHelpers
-import math
+from utils.exceptions import InvalidInputError, ExpressionParseError
+
+# Example expressions for quick loading
+CALCULATOR_EXAMPLES = {
+    "Basic Arithmetic": "2 + 3 * 4 - sqrt(16)",
+    "Trigonometry": "sin(pi/4) + cos(pi/3) + tan(pi/6)",
+    "Logarithms": "ln(e**2) + log(100, 10)",
+    "Complex Expression": "sqrt(16) + exp(1) * sin(pi/2) + log(1000)",
+    "With Variables": "x**2 + 2*x + 1"
+}
 
 def render_calculator_panel():
     """Render the scientific calculator panel"""
@@ -16,6 +25,23 @@ def render_calculator_panel():
         <p style='margin: 0.5rem 0 0 0; color: #B0BEC5;'>Advanced mathematical expression evaluator with step-by-step solutions</p>
     </div>
     """, unsafe_allow_html=True)
+    
+    # Example selector
+    st.markdown("**Load Example:**")
+    col_ex1, col_ex2 = st.columns([3, 1])
+    with col_ex1:
+        example_choice = st.selectbox(
+            "Choose an example:",
+            [""] + list(CALCULATOR_EXAMPLES.keys()),
+            help="Select an example to auto-fill the expression field"
+        )
+    with col_ex2:
+        if st.button("Load Example", disabled=not example_choice):
+            if example_choice in CALCULATOR_EXAMPLES:
+                st.session_state.main_expression = CALCULATOR_EXAMPLES[example_choice]
+                st.rerun()
+    
+    st.markdown("---")
     
     # Calculator mode selection
     # Initialize session state for expression and handle button updates BEFORE creating widget
@@ -106,14 +132,36 @@ def render_calculator_panel():
         variables = None
         if var_names and var_values:
             try:
-                names = [name.strip() for name in var_names.split(',')]
-                values = [float(val.strip()) for val in var_values.split(',')]
-                if len(names) == len(values):
-                    variables = dict(zip(names, values))
+                # Strip and filter out empty strings
+                names = [name.strip() for name in var_names.split(',') if name.strip()]
+                values_str = [val.strip() for val in var_values.split(',') if val.strip()]
+                
+                # Check if we have at least one variable
+                if not names or not values_str:
+                    st.error("Please provide at least one variable name and value")
+                    return
+                
+                # Convert values to floats
+                values = [float(val) for val in values_str]
+                
+                # Check lengths match
+                if len(names) != len(values):
+                    st.error("Number of variable names and values must match!")
+                    st.info(f"You provided {len(names)} names and {len(values)} values")
+                    return
+                    
+                variables = dict(zip(names, values))
+            except ValueError as e:
+                # More specific error handling for conversion errors
+                if "could not convert" in str(e) or "invalid literal" in str(e):
+                    st.error("Invalid variable values. Please enter numeric values.")
+                    st.info(f"Hint: Values must be numbers (e.g., '1, 2.5, -3')")
                 else:
-                    st.warning("Number of variable names and values must match!")
-            except ValueError:
-                st.warning("Invalid variable values. Please enter numeric values.")
+                    st.error(f"Error parsing variables: {str(e)}")
+                return
+            except Exception as e:
+                st.error(f"Error parsing variables: {str(e)}")
+                return
         
         # Perform calculation based on mode
         if mode == "Evaluate":
@@ -170,7 +218,7 @@ def render_calculator_panel():
 def display_calculation_result(result, operation_name):
     """Display calculation results"""
     if result['success']:
-        st.success(f"✅ {operation_name} completed successfully")
+        st.success(f"{operation_name} completed successfully")
         
         col1, col2 = st.columns(2)
         
@@ -199,12 +247,12 @@ def display_calculation_result(result, operation_name):
                 st.write("No numeric result available")
     
     else:
-        st.error(f"❌ {operation_name} failed: {result['error']}")
+        st.error(f"{operation_name} failed: {result['error']}")
 
 def display_simplification_result(result):
     """Display simplification results"""
     if result['success']:
-        st.success("✅ Expression simplified successfully")
+        st.success("Expression simplified successfully")
         
         col1, col2 = st.columns(2)
         
@@ -218,15 +266,15 @@ def display_simplification_result(result):
         
         # Check if simplification made a difference
         if str(result['original']) == str(result['simplified']):
-            st.info("ℹ️ Expression is already in its simplest form")
+            st.info("Expression is already in its simplest form")
     
     else:
-        st.error(f"❌ Simplification failed: {result['error']}")
+        st.error(f"Simplification failed: {result['error']}")
 
 def display_expansion_result(result):
     """Display expansion results"""
     if result['success']:
-        st.success("✅ Expression expanded successfully")
+        st.success("Expression expanded successfully")
         
         col1, col2 = st.columns(2)
         
@@ -240,15 +288,15 @@ def display_expansion_result(result):
         
         # Check if expansion made a difference
         if str(result['original']) == str(result['expanded']):
-            st.info("ℹ️ Expression is already expanded")
+            st.info("Expression is already expanded")
     
     else:
-        st.error(f"❌ Expansion failed: {result['error']}")
+        st.error(f"Expansion failed: {result['error']}")
 
 def display_factoring_result(result):
     """Display factoring results"""
     if result['success']:
-        st.success("✅ Expression factored successfully")
+        st.success("Expression factored successfully")
         
         col1, col2 = st.columns(2)
         
@@ -262,15 +310,15 @@ def display_factoring_result(result):
         
         # Check if factoring made a difference
         if str(result['original']) == str(result['factored']):
-            st.info("ℹ️ Expression cannot be factored further")
+            st.info("Expression cannot be factored further")
     
     else:
-        st.error(f"❌ Factoring failed: {result['error']}")
+        st.error(f"Factoring failed: {result['error']}")
 
 def display_expression_info(validation):
     """Display expression validation and information"""
     if validation['valid']:
-        st.success("✅ Expression is valid")
+        st.success("Expression is valid")
         
         col1, col2, col3 = st.columns(3)
         
@@ -299,7 +347,7 @@ def display_expression_info(validation):
                 st.write(f"• Rational: {info['is_rational']}")
     
     else:
-        st.error(f"❌ Invalid expression: {validation['error']}")
+        st.error(f"Invalid expression: {validation['error']}")
         st.markdown("**Help:**")
         st.markdown("""
         - Use standard mathematical notation

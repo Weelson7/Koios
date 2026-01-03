@@ -6,6 +6,7 @@ import scipy.sparse as sp
 from scipy.sparse.linalg import spsolve
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from utils.exceptions import InvalidInputError, ConfigurationError
 
 class ElementType(Enum):
     """Supported finite element types"""
@@ -198,6 +199,10 @@ class FEAEngine:
     """Main Finite Element Analysis engine"""
     
     def __init__(self):
+        self.reset_analysis()
+    
+    def reset_analysis(self):
+        """Reset analysis state for new problem"""
         self.mesh: Optional[Mesh] = None
         self.global_stiffness: Optional[sp.csr_matrix] = None
         self.global_mass: Optional[sp.csr_matrix] = None
@@ -205,6 +210,10 @@ class FEAEngine:
         self.displacement: Optional[np.ndarray] = None
         self.stress: Optional[Dict[int, np.ndarray]] = None
         self.strain: Optional[Dict[int, np.ndarray]] = None
+        self.loads: Dict[int, np.ndarray] = {}
+        self.boundary_conditions: Dict[int, Dict[int, float]] = {}
+        self.displacement_results: Optional[np.ndarray] = None
+        self.stress_results: Optional[Dict[int, np.ndarray]] = None
         
     def create_mesh(self) -> Mesh:
         """Create a new mesh"""
@@ -237,6 +246,16 @@ class FEAEngine:
                            nx: int, ny: int, thickness: float,
                            material: Material) -> Mesh:
         """Generate 2D plate mesh with quad elements"""
+        # Validate mesh dimensions
+        if nx <= 0 or ny <= 0:
+            raise InvalidInputError("mesh dimensions", f"nx={nx}, ny={ny}", "positive integers")
+        if nx > 1000 or ny > 1000:
+            raise InvalidInputError("mesh dimensions", f"nx={nx}, ny={ny}", "values <= 1000 to avoid memory issues")
+        if width <= 0 or height <= 0:
+            raise InvalidInputError("plate dimensions", f"width={width}, height={height}", "positive values")
+        if thickness <= 0:
+            raise InvalidInputError("thickness", str(thickness), "positive value")
+        
         self.mesh = Mesh()
         
         # Create nodes
@@ -266,7 +285,7 @@ class FEAEngine:
     def assemble_stiffness_matrix(self):
         """Assemble global stiffness matrix"""
         if not self.mesh:
-            raise ValueError("No mesh defined")
+            raise ConfigurationError("mesh", "undefined", "Call create_mesh() first")
         
         # Determine DOFs
         num_nodes = len(self.mesh.nodes)
@@ -295,6 +314,8 @@ class FEAEngine:
                     col_ind.append(global_dofs[j])
                     data.append(k_elem[i, j])
         
+        # csr_matrix automatically sums duplicate (row, col) indices
+        # This is correct for FEA where multiple elements contribute to the same DOF pairs
         self.global_stiffness = sp.csr_matrix(
             (data, (row_ind, col_ind)), 
             shape=(total_dofs, total_dofs)
@@ -366,6 +387,13 @@ class FEAEngine:
         E = element.material.youngs_modulus
         nu = element.material.poissons_ratio
         t = element.properties.get("thickness", 1.0)
+        
+        # Validate Poisson's ratio to prevent division by zero
+        if nu <= -1 or nu >= 1:
+            raise ValueError(f"Poisson's ratio (nu={nu}) must be in range -1 < nu < 1. Typical range for materials is 0 to 0.5.")
+        if nu < 0 or nu > 0.5:
+            import warnings
+            warnings.warn(f"Poisson's ratio (nu={nu}) is outside typical material range [0, 0.5].")
         
         # Constitutive matrix (plane stress)
         # D[0:2,0:2] terms for normal stress, D[2,2] for shear

@@ -10,6 +10,14 @@ sys.path.extend([str(current_dir / "core"), str(current_dir / "utils")])
 from core.numerical_methods_engine import NumericalMethodsEngine
 from core.optimization_algorithms_engine import OptimizationAlgorithmsEngine
 from utils.ui_helpers import run_task, copy_button
+from utils.exceptions import ConvergenceError, InvalidInputError, NumericalInstabilityError
+
+# Example problems for numerical methods
+NUMERICAL_EXAMPLES = {
+    "Root Finding: Cubic": {"function": "x**3 - 2*x - 5", "method": "newton_raphson"},
+    "Integration: Sine": {"function": "sin(x)", "limits": (0, 3.14159), "method": "simpson"},
+    "ODE: Exponential Growth": {"function": "y", "initial": 1.0, "method": "rk4"},
+}
 
 
 def render_numerical_methods_panel():
@@ -21,6 +29,23 @@ def render_numerical_methods_panel():
         <p style='margin: 0.5rem 0 0 0; color: #B0BEC5;'>Advanced numerical computation and optimization techniques</p>
     </div>
     """, unsafe_allow_html=True)
+    
+    # Example selector
+    st.markdown("**Load Example:**")
+    col_ex1, col_ex2 = st.columns([3, 1])
+    with col_ex1:
+        example_choice = st.selectbox(
+            "Choose an example:",
+            [""] + list(NUMERICAL_EXAMPLES.keys()),
+            help="Select an example to auto-fill parameters"
+        )
+    with col_ex2:
+        if st.button("Load Example", disabled=not example_choice):
+            if example_choice in NUMERICAL_EXAMPLES:
+                st.session_state.numerical_example = NUMERICAL_EXAMPLES[example_choice]
+                st.rerun()
+    
+    st.markdown("---")
 
     # Create tabs for different categories
     tab1, tab2, tab3, tab4 = st.tabs(
@@ -50,9 +75,13 @@ def render_root_finding():
     with col1:
         st.markdown("### Function Setup")
 
+        # Get example data
+        example_data = st.session_state.get("numerical_example", {})
+        default_func = example_data.get("function", "x^3 - 2*x - 5")
+        
         # Function input
         function = st.text_input("Function f(x) = 0",
-                                 value="x^3 - 2*x - 5",
+                                 value=default_func,
                                  key="root_function")
 
         # Method selection

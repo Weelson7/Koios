@@ -2,6 +2,13 @@ import numpy as np
 import sympy as sp
 from typing import Dict, Any, List, Optional, Callable
 import math
+from utils.exceptions import InvalidInputError
+
+# Module-level constants for hardcoded values
+NUMERICAL_TOLERANCE = 1e-10  # Tolerance for floating point comparisons
+DAMPING_CRITICAL_THRESHOLD = 1e-10  # Threshold for critically damped system detection
+DIVISION_BY_ZERO_TOLERANCE = 1e-10  # Prevent division by zero
+PHOTOCURRENT_SCALE = 1e-10  # Photocurrent scaling factor
 
 class PhysicsSimulator:
     """
@@ -74,6 +81,10 @@ class PhysicsSimulator:
             g: Gravitational acceleration (m/s^2, default 9.81)
             time_max: Maximum simulation time (s)
             num_points: Number of simulation points
+            
+        Note:
+            Output may contain fewer points than requested if trajectory ends
+            (projectile returns to ground level) before time_max.
         """
         result = {
             'success': False,
@@ -97,6 +108,18 @@ class PhysicsSimulator:
             num_points = parameters.get('num_points', 100)
 
             # Validate parameters
+            if v0 <= 0:
+                raise InvalidInputError("velocity", str(v0), "positive value > 0")
+            if not (-90 < angle_deg < 90):
+                raise InvalidInputError("angle", str(angle_deg), "value between -90 and 90 degrees")
+            if g <= 0:
+                raise InvalidInputError("gravitational acceleration", str(g), "positive value")
+            if num_points <= 0:
+                raise InvalidInputError("num_points", str(num_points), "positive integer")
+            if num_points > 10000:
+                raise InvalidInputError("num_points", str(num_points), "value <= 10000 to avoid memory issues")
+            if time_max is not None and time_max <= 0:
+                raise InvalidInputError("time_max", str(time_max), "positive value")
             if math.isinf(v0) or math.isnan(v0):
                 result['error'] = "Initial velocity cannot be infinite or NaN"
                 return result
@@ -139,6 +162,9 @@ class PhysicsSimulator:
             y_position = y_position[valid_indices]
             x_velocity = x_velocity[valid_indices]
             y_velocity = y_velocity[valid_indices]
+            
+            # Store actual number of points generated (may differ from num_points)
+            actual_points = len(time)
 
             result['success'] = True
             result['time'] = time.tolist()
@@ -155,6 +181,7 @@ class PhysicsSimulator:
             result['max_height'] = max_height
             result['range'] = range_max
             result['flight_time'] = flight_time
+            result['actual_points_generated'] = actual_points
 
         except Exception as e:
             result['error'] = str(e)
@@ -188,6 +215,22 @@ class PhysicsSimulator:
             phase = parameters.get('phase', 0.0)
             time_max = parameters.get('time_max', 4.0)
             num_points = parameters.get('num_points', 200)
+
+            # Validate parameters
+            if frequency <= 0:
+                raise InvalidInputError("frequency", str(frequency), "positive value > 0")
+            if time_max <= 0:
+                raise InvalidInputError("time_max", str(time_max), "positive value")
+            if num_points <= 0:
+                raise InvalidInputError("num_points", str(num_points), "positive integer")
+            if num_points > 10000:
+                raise InvalidInputError("num_points", str(num_points), "value <= 10000 to avoid memory issues")
+            if math.isinf(amplitude) or math.isnan(amplitude):
+                result['error'] = "Amplitude cannot be infinite or NaN"
+                return result
+            if math.isinf(frequency) or math.isnan(frequency):
+                result['error'] = "Frequency cannot be infinite or NaN"
+                return result
 
             # Angular frequency
             omega = 2 * math.pi * frequency
@@ -244,22 +287,48 @@ class PhysicsSimulator:
             time_max = parameters.get('time_max', 10.0)
             num_points = parameters.get('num_points', 500)
 
+            # Validate parameters
+            if omega0 <= 0:
+                raise InvalidInputError("natural frequency (omega0)", str(omega0), "positive value > 0")
+            if gamma < 0:
+                raise InvalidInputError("damping coefficient (gamma)", str(gamma), "non-negative value >= 0")
+            if time_max <= 0:
+                raise InvalidInputError("time_max", str(time_max), "positive value")
+            if num_points <= 0:
+                raise InvalidInputError("num_points", str(num_points), "positive integer")
+            if num_points > 10000:
+                raise InvalidInputError("num_points", str(num_points), "value <= 10000 to avoid memory issues")
+            if math.isinf(amplitude) or math.isnan(amplitude):
+                result['error'] = "Amplitude cannot be infinite or NaN"
+                return result
+            if math.isinf(omega0) or math.isnan(omega0):
+                result['error'] = "Natural frequency cannot be infinite or NaN"
+                return result
+            if math.isinf(gamma) or math.isnan(gamma):
+                result['error'] = "Damping coefficient cannot be infinite or NaN"
+                return result
+
             # Time array
             time = np.linspace(0, time_max, num_points)
 
             # Damped oscillation equations
             discriminant = omega0**2 - gamma**2
 
-            if discriminant >= 0:  # Underdamped
+            if discriminant > 0:  # Underdamped
                 omega_d = np.sqrt(discriminant)
                 envelope = amplitude * np.exp(-gamma * time)
                 position = envelope * np.cos(omega_d * time)
                 velocity = -envelope * (gamma * np.cos(omega_d * time) + omega_d * np.sin(omega_d * time))
-            else:  # Overdamped or critically damped
-                omega_d = np.sqrt(abs(discriminant))
+            elif abs(discriminant) < DAMPING_CRITICAL_THRESHOLD:  # Critically damped
                 envelope = amplitude * np.exp(-gamma * time)
-                position = amplitude * np.exp(-gamma * time) * np.cos(omega0 * time)
-                velocity = -amplitude * np.exp(-gamma * time) * (gamma * np.cos(omega0 * time) + omega0 * np.sin(omega0 * time))
+                position = amplitude * (1 + gamma * time) * np.exp(-gamma * time)
+                velocity = -amplitude * gamma**2 * time * np.exp(-gamma * time)
+            else:  # Overdamped (discriminant < 0)
+                lambda1 = -gamma + np.sqrt(-discriminant)
+                lambda2 = -gamma - np.sqrt(-discriminant)
+                envelope = amplitude * np.exp(-gamma * time)
+                position = amplitude * (np.exp(lambda1 * time) + np.exp(lambda2 * time)) / 2
+                velocity = amplitude * (lambda1 * np.exp(lambda1 * time) + lambda2 * np.exp(lambda2 * time)) / 2
 
             result['success'] = True
             result['time'] = time.tolist()
@@ -308,6 +377,10 @@ class PhysicsSimulator:
 
             # Convert to radians
             angle0 = math.radians(angle0_deg)
+
+            # Add warning for large angle approximation
+            if abs(angle0_deg) > 15:
+                result['warning'] = "Large angle approximation may be inaccurate. Consider using numerical integration for angles > 15 degrees."
 
             # Pendulum frequency
             omega = math.sqrt(g / length)
@@ -367,11 +440,27 @@ class PhysicsSimulator:
             C = parameters.get('C', 1e-6)    # 1 microF
             V0 = parameters.get('V0', 0.0)   # Initial voltage
             Vs = parameters.get('Vs', 5.0)   # Source voltage
-            time_max = parameters.get('time_max', 5 * R * C)  # 5 time constants
+            time_max = parameters.get('time_max', None)
             num_points = parameters.get('num_points', 200)
+
+            # Validate parameters
+            if R <= 0:
+                result['error'] = "Resistance must be positive"
+                return result
+            if C <= 0:
+                result['error'] = "Capacitance must be positive"
+                return result
+            if math.isinf(R) or math.isnan(R):
+                result['error'] = "Resistance cannot be infinite or NaN"
+                return result
+            if math.isinf(C) or math.isnan(C):
+                result['error'] = "Capacitance cannot be infinite or NaN"
+                return result
 
             # Time constant
             tau = R * C
+            if time_max is None:
+                time_max = 5 * tau  # Default to 5 time constants
 
             # Time array
             time = np.linspace(0, time_max, num_points)
@@ -636,8 +725,8 @@ class PhysicsSimulator:
             v = parameters.get('sound_speed', 343.0)  # Speed of sound in air
 
             # Check for division by zero
-            if abs(v - vs) < 1e-10:
-                raise ValueError("Source velocity cannot equal sound speed (v - vs = 0)")
+            if abs(v - vs) < NUMERICAL_TOLERANCE:
+                raise InvalidInputError("source_velocity", str(parameters.get('source_velocity')), "less than sound speed")
 
             # Doppler effect equation
             # Positive vo: observer moving toward source (higher frequency)
@@ -740,6 +829,13 @@ class PhysicsSimulator:
             time_max = parameters.get('time_max', 1000.0)
             nx = parameters.get('num_points', 50)
 
+            # Validate grid parameters
+            if nx < 2:
+                raise InvalidInputError("nx", str(nx), "at least 2 (recommend 10+)")
+            if nx < 10:
+                import warnings
+                warnings.warn("Low grid resolution. Recommend at least 10 points for meaningful results.")
+
             # Spatial grid
             dx = L / (nx - 1)
             x = np.linspace(0, L, nx)
@@ -833,7 +929,7 @@ class PhysicsSimulator:
             def accel(x_pos, y_pos):
                 """Calculate gravitational acceleration"""
                 r = math.sqrt(x_pos**2 + y_pos**2)
-                if r < 1e-10:
+                if r < DIVISION_BY_ZERO_TOLERANCE:
                     return 0, 0
                 return -G * M * x_pos / r**3, -G * M * y_pos / r**3
 
@@ -1140,7 +1236,7 @@ class PhysicsSimulator:
                 dx = X - x0
                 dy = Y - y0
                 r = np.sqrt(dx**2 + dy**2)
-                r[r == 0] = 1e-10  # Avoid division by zero
+                r[r == 0] = DIVISION_BY_ZERO_TOLERANCE  # Avoid division by zero
 
                 # Electric field contributions
                 Ex += k_e * q * dx / r**3
@@ -1187,7 +1283,7 @@ class PhysicsSimulator:
                                 dx = current_x - other_charge['x']
                                 dy = current_y - other_charge['y']
                                 r = np.sqrt(dx**2 + dy**2)
-                                if r > 1e-10:
+                                if r > DIVISION_BY_ZERO_TOLERANCE:
                                     Ex_point += k_e * q_other * dx / r**3
                                     Ey_point += k_e * q_other * dy / r**3
 
@@ -1259,7 +1355,7 @@ class PhysicsSimulator:
             # Einstein's photoelectric equation: E_k = E_photon - phi
             if E_photon > phi:
                 kinetic_energy = E_photon - phi
-                photocurrent = intensity * 1e-10
+                photocurrent = intensity * PHOTOCURRENT_SCALE
                 stopping_potential = kinetic_energy
             else:
                 kinetic_energy = 0
@@ -1365,7 +1461,7 @@ class PhysicsSimulator:
             # Lorentz factor: γ = 1/sqrt(1 - v²/c²)
             beta = v / c
             if beta >= 1:
-                raise ValueError("Velocity must be less than speed of light")
+                raise InvalidInputError("velocity", str(parameters.get('velocity')), "less than speed of light")
 
             gamma = 1 / math.sqrt(1 - beta**2)
 
@@ -2389,6 +2485,13 @@ class PhysicsSimulator:
             nx = params.get('grid_x', 20)
             ny = params.get('grid_y', 10)
 
+            # Validate grid parameters
+            if nx < 2 or ny < 2:
+                raise InvalidInputError("grid dimensions (nx, ny)", f"({nx}, {ny})", "at least (2, 2), recommend (10+, 10+)")
+            if nx < 10 or ny < 10:
+                import warnings
+                warnings.warn("Low grid resolution. Recommend at least 10 points per dimension for meaningful results.")
+
             dx = length / (nx - 1)
             dy = width / (ny - 1)
 
@@ -2491,6 +2594,13 @@ class PhysicsSimulator:
             # Grid generation
             nx = params.get('grid_x', 50)
             ny = params.get('grid_y', 50)
+
+            # Validate grid parameters
+            if nx < 2 or ny < 2:
+                raise InvalidInputError("grid dimensions (nx, ny)", f"({nx}, {ny})", "at least (2, 2), recommend (10+, 10+)")
+            if nx < 10 or ny < 10:
+                import warnings
+                warnings.warn("Low grid resolution. Recommend at least 10 points per dimension for meaningful results.")
 
             dx = length / (nx - 1)
             dy = width / (ny - 1)
@@ -2769,7 +2879,7 @@ class PhysicsSimulator:
                 f = abs(f)  # Positive focal length for converging lenses
 
             # Thin lens equation: 1/f = 1/do + 1/di
-            if abs(do - f) < 1e-10:
+            if abs(do - f) < NUMERICAL_TOLERANCE:
                 # Object at focal point
                 di = float('inf')
                 hi = float('inf')
@@ -2810,7 +2920,7 @@ class PhysicsSimulator:
             ray_paths.append(ray1)
 
             # Ray 2: Through center of lens (undeviated)
-            if abs(do) > 1e-10:
+            if abs(do) > NUMERICAL_TOLERANCE:
                 ray2 = {
                     'start': [-do, ho],
                     'lens_entry': [0, 0],
@@ -2820,7 +2930,7 @@ class PhysicsSimulator:
 
             # Ray 3: Through focal point, emerges parallel
             if f > 0 and do > f:  # Only for converging lenses
-                if abs(do - f) > 1e-10:  # Additional safety check
+                if abs(do - f) > NUMERICAL_TOLERANCE:  # Additional safety check
                     y_lens = ho * f / (do - f)
                     if abs(y_lens) <= lens_diameter/2:
                         ray3 = {

@@ -6,6 +6,39 @@ from sympy import Matrix as SpMatrix
 
 from core.matrix_operations import matrix_operations
 from utils.ui_helpers import run_task, copy_button
+from utils.exceptions import InvalidDimensionError, SingularMatrixError, InvalidInputError
+
+# Example matrices for quick loading
+MATRIX_EXAMPLES = {
+    "2×2 Identity": {"size": (2, 2), "type": "identity"},
+    "3×3 Random": {"size": (3, 3), "type": "random"},
+    "2×3 Zero": {"size": (2, 3), "type": "zeros"},
+    "4×4 Diagonal": {"size": (4, 4), "type": "diagonal"},
+}
+
+# Predefined matrices for selection - defined once at module level
+PREDEFINED_MATRICES = {
+    "Identity 3x3": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+    "Zero 3x3": [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+    "Ones 3x3": [[1, 1, 1], [1, 1, 1], [1, 1, 1]],
+    "Diagonal": [[2, 0, 0], [0, 3, 0], [0, 0, 4]],
+    "Symmetric": [[1, 2, 3], [2, 4, 5], [3, 5, 6]],
+    "Hilbert 3x3": [[1, 1/2, 1/3], [1/2, 1/3, 1/4], [1/3, 1/4, 1/5]]
+}
+
+def load_example_matrix(example_name):
+    """Callback to load example matrix without explicit rerun"""
+    if example_name in MATRIX_EXAMPLES:
+        ex_config = MATRIX_EXAMPLES[example_name]
+        rows, cols = ex_config["size"]
+        if ex_config["type"] == "identity":
+            st.session_state.matrix_a = np.eye(rows)
+        elif ex_config["type"] == "random":
+            st.session_state.matrix_a = np.random.randint(-10, 10, (rows, cols))
+        elif ex_config["type"] == "zeros":
+            st.session_state.matrix_a = np.zeros((rows, cols))
+        elif ex_config["type"] == "diagonal":
+            st.session_state.matrix_a = np.diag(np.arange(1, rows + 1))
 
 def render_matrix_panel():
     """Render the matrix operations panel"""
@@ -16,6 +49,25 @@ def render_matrix_panel():
         <p style='margin: 0.5rem 0 0 0; color: #B0BEC5;'>Comprehensive matrix operations and linear algebra tools</p>
     </div>
     """, unsafe_allow_html=True)
+    
+    # Example selector
+    st.markdown("**Load Example:**")
+    col_ex1, col_ex2 = st.columns([3, 1])
+    with col_ex1:
+        example_choice = st.selectbox(
+            "Choose an example:",
+            [""] + list(MATRIX_EXAMPLES.keys()),
+            help="Select an example to quickly generate matrices"
+        )
+    with col_ex2:
+        st.button(
+            "Load Example", 
+            disabled=not example_choice,
+            on_click=load_example_matrix,
+            args=(example_choice,)
+        )
+    
+    st.markdown("---")
     
     # Matrix input method selection
     input_method = st.radio(
@@ -56,9 +108,6 @@ def render_matrix_panel():
         if matrix_b is not None:
             st.session_state.matrix_b = matrix_b
             st.success("Matrix B generated successfully!")
-        
-        if matrix_a is not None or matrix_b is not None:
-            st.rerun()
     
     st.markdown("---")
     
@@ -143,7 +192,9 @@ def get_matrix_from_setup(method, matrix_label):
         return generate_random_matrix_generate(matrix_label)
     elif method == "Predefined":
         return get_predefined_matrix_generate(matrix_label)
-    return None
+    else:
+        st.error(f"Unknown matrix generation method: {method}")
+        return None
 
 def manual_matrix_entry_setup(matrix_label):
     """Setup manual matrix entry UI"""
@@ -169,14 +220,22 @@ def manual_matrix_entry_setup(matrix_label):
                 )
 
 def manual_matrix_entry_generate(matrix_label):
-    """Generate matrix from manual entry setup"""
+    """Generate matrix from manual entry setup with validation"""
     try:
         if f"rows_{matrix_label}" not in st.session_state or f"cols_{matrix_label}" not in st.session_state:
+            st.error(f"Matrix dimensions not set for {matrix_label}")
             return None
             
         rows = st.session_state[f"rows_{matrix_label}"]
         cols = st.session_state[f"cols_{matrix_label}"]
         
+        # Validate matrix dimensions
+        if rows <= 0 or cols <= 0:
+            st.error(f"Invalid matrix dimensions for {matrix_label}: rows={rows}, cols={cols}")
+            return None
+        
+        # Check all matrix elements exist
+        missing_keys = []
         matrix_data = []
         for i in range(rows):
             row_data = []
@@ -185,8 +244,14 @@ def manual_matrix_entry_generate(matrix_label):
                 if key in st.session_state:
                     row_data.append(st.session_state[key])
                 else:
+                    missing_keys.append(f"[{i+1},{j+1}]")
                     row_data.append(0.0)
             matrix_data.append(row_data)
+        
+        # Warn user about missing/default values
+        if missing_keys:
+            st.warning(f"Matrix {matrix_label}: Missing or default values for elements: {', '.join(missing_keys[:5])}" + 
+                       ("..." if len(missing_keys) > 5 else ""))
         
         result = matrix_operations.create_matrix(matrix_data, symbolic=False)
         if result['success']:
@@ -195,7 +260,7 @@ def manual_matrix_entry_generate(matrix_label):
             st.error(f"Error creating matrix {matrix_label}: {result['error']}")
             return None
     except Exception as e:
-        st.error(f"Error generating matrix {matrix_label}: {str(e)}")
+        st.error(f"Unexpected error creating matrix {matrix_label}: {str(e)}")
         return None
 
 
@@ -230,35 +295,21 @@ def generate_random_matrix_generate(matrix_label):
 
 def get_predefined_matrix_setup(matrix_label):
     """Setup predefined matrix selection UI"""
-    predefined_options = {
-        "Identity 3x3": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
-        "Zero 3x3": [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-        "Ones 3x3": [[1, 1, 1], [1, 1, 1], [1, 1, 1]],
-        "Diagonal": [[2, 0, 0], [0, 3, 0], [0, 0, 4]],
-        "Symmetric": [[1, 2, 3], [2, 4, 5], [3, 5, 6]],
-        "Hilbert 3x3": [[1, 1/2, 1/3], [1/2, 1/3, 1/4], [1/3, 1/4, 1/5]]
-    }
-    
     st.selectbox(
         f"Select predefined matrix for {matrix_label}:",
-        list(predefined_options.keys()),
+        list(PREDEFINED_MATRICES.keys()),
         key=f"predefined_{matrix_label}"
     )
 
 def get_predefined_matrix_generate(matrix_label):
     """Generate predefined matrix from setup"""
-    predefined_options = {
-        "Identity 3x3": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
-        "Zero 3x3": [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-        "Ones 3x3": [[1, 1, 1], [1, 1, 1], [1, 1, 1]],
-        "Diagonal": [[2, 0, 0], [0, 3, 0], [0, 0, 4]],
-        "Symmetric": [[1, 2, 3], [2, 4, 5], [3, 5, 6]],
-        "Hilbert 3x3": [[1, 1/2, 1/3], [1/2, 1/3, 1/4], [1/3, 1/4, 1/5]]
-    }
-    
     selected = st.session_state.get(f"predefined_{matrix_label}", "Identity 3x3")
     try:
-        matrix_data = predefined_options[selected]
+        if selected not in PREDEFINED_MATRICES:
+            st.error(f"Selected matrix '{selected}' not found in predefined matrices")
+            return None
+        
+        matrix_data = PREDEFINED_MATRICES[selected]
         result = matrix_operations.create_matrix(matrix_data, symbolic=False)
         if result['success']:
             return result['matrix']
@@ -273,13 +324,22 @@ def display_matrix(matrix, title):
     if isinstance(matrix, np.ndarray):
         df = pd.DataFrame(matrix)
         st.write(f"**{title}** (Shape: {matrix.shape})")
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df, width='stretch')
     elif isinstance(matrix, SpMatrix):
         st.write(f"**{title}** (Shape: {matrix.shape})")
         st.latex(sp.latex(matrix))
 
 def perform_single_matrix_operation(matrix, operation):
     """Perform single matrix operations"""
+    # Type checking: Verify matrix is numpy array or SymPy matrix
+    if matrix is None:
+        st.error("No matrix provided for operation")
+        return
+    
+    if not isinstance(matrix, (np.ndarray, SpMatrix)):
+        st.error(f"Invalid matrix type: {type(matrix).__name__}. Expected numpy.ndarray or sympy.Matrix")
+        return
+    
     st.markdown("---")
     st.subheader(f"Result: {operation.title()}")
     
@@ -380,6 +440,19 @@ def perform_single_matrix_operation(matrix, operation):
 
 def perform_dual_matrix_operation(matrix_a, matrix_b, operation):
     """Perform operations involving two matrices"""
+    # Type checking: Verify both matrices are valid
+    if matrix_a is None or matrix_b is None:
+        st.error("Both matrices must be provided for two-matrix operations")
+        return
+    
+    if not isinstance(matrix_a, (np.ndarray, SpMatrix)):
+        st.error(f"Invalid type for matrix A: {type(matrix_a).__name__}. Expected numpy.ndarray or sympy.Matrix")
+        return
+    
+    if not isinstance(matrix_b, (np.ndarray, SpMatrix)):
+        st.error(f"Invalid type for matrix B: {type(matrix_b).__name__}. Expected numpy.ndarray or sympy.Matrix")
+        return
+    
     st.markdown("---")
     st.subheader(f"Result: {operation.title()}")
     
@@ -443,6 +516,15 @@ def perform_dual_matrix_operation(matrix_a, matrix_b, operation):
 
 def perform_matrix_norm(matrix, norm_type):
     """Perform matrix norm calculation"""
+    # Type checking: Verify matrix is valid
+    if matrix is None:
+        st.error("Matrix is required for norm calculation")
+        return
+    
+    if not isinstance(matrix, (np.ndarray, SpMatrix)):
+        st.error(f"Invalid matrix type: {type(matrix).__name__}. Expected numpy.ndarray or sympy.Matrix")
+        return
+    
     st.markdown("---")
     st.subheader(f"Result: {norm_type.title()} Norm")
     
@@ -458,3 +540,4 @@ def perform_matrix_norm(matrix, norm_type):
         st.success(f"{norm_type.title()} norm calculated successfully")
         st.metric(f"{norm_type.title()} Norm", f"{result['norm']:.6g}")
         copy_button(str(result['norm']), key="norm-copy")
+

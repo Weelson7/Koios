@@ -5,6 +5,7 @@ from enum import Enum
 import scipy.optimize as sp_opt
 from scipy.stats import norm
 import warnings
+from utils.exceptions import UndefinedOperationError
 
 class OptimizationType(Enum):
     """Types of optimization problems"""
@@ -1188,9 +1189,9 @@ class OptimizationAlgorithmsEngine:
                             }
                 
                 # If no symbolic solution found, try numerical approach
-                raise ValueError("No symbolic solution found")
+                raise UndefinedOperationError("symbolic solution", "No symbolic solution found")
                 
-            except:
+            except UndefinedOperationError:
                 # Numerical approach using penalty method
                 return self._numerical_lagrange_optimization(
                     f_expr, var_symbols, constraint_exprs, initial_guess, bounds, tolerance, max_iterations

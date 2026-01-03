@@ -8,6 +8,15 @@ from core.calculation_engine import calculation_engine
 from core.ode_solver import ode_solver
 from core.matrix_operations import matrix_operations
 from utils.ui_helpers import run_task, copy_button
+from utils.exceptions import InvalidInputError, ExpressionParseError, ConvergenceError
+
+# Example equations for quick loading
+EQUATION_EXAMPLES = {
+    "Quadratic": {"equation": "x**2 - 4", "type": "Single Equation"},
+    "Trigonometric": {"equation": "sin(x) - 0.5", "type": "Single Equation"},
+    "2×2 Linear System": {"equations": ["2*x + y - 5", "x - y - 1"], "type": "System"},
+    "Cubic Polynomial": {"equation": "x**3 - 6*x**2 + 11*x - 6", "type": "Polynomial"},
+}
 
 def render_equation_solver_panel():
     """Render the equation solver panel"""
@@ -18,6 +27,25 @@ def render_equation_solver_panel():
         <p style='margin: 0.5rem 0 0 0; color: #B0BEC5;'>Solve linear equations, systems of equations, and polynomial equations</p>
     </div>
     """, unsafe_allow_html=True)
+    
+    # Example selector
+    st.markdown("**Load Example:**")
+    col_ex1, col_ex2 = st.columns([3, 1])
+    with col_ex1:
+        example_choice = st.selectbox(
+            "Choose an example:",
+            [""] + list(EQUATION_EXAMPLES.keys()),
+            help="Select an example to auto-fill equation fields"
+        )
+    with col_ex2:
+        if st.button("Load Example", disabled=not example_choice):
+            if example_choice in EQUATION_EXAMPLES:
+                ex = EQUATION_EXAMPLES[example_choice]
+                if "equation" in ex:
+                    st.session_state.equation_example = ex["equation"]
+                st.rerun()
+    
+    st.markdown("---")
     
     # Solver type selection
     solver_type = st.selectbox(
@@ -46,6 +74,7 @@ def render_single_equation_solver():
     with col1:
         equation = st.text_input(
             "Enter equation:",
+            value=st.session_state.get("equation_example", ""),
             placeholder="x^2 - 4 = 0 or sin(x) = cos(x)",
             help="Use = for equations or enter expression that equals zero"
         )
@@ -476,7 +505,7 @@ def find_numerical_solutions(equation, variable, x_min, x_max, num_points):
             yaxis_title="f(x)"
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     
     except Exception as e:
         st.error(f"Numerical solution failed: {str(e)}")
@@ -642,7 +671,7 @@ def solve_polynomial_coefficients(coefficients):
         # Create polynomial
         roots = np.roots(coefficients)
         
-        st.success("✅ Polynomial solved successfully")
+        st.success("Polynomial solved successfully")
         
         # Build polynomial expression for display
         degree = len(coefficients) - 1
@@ -676,7 +705,7 @@ def solve_ode_symbolic(ode_expr):
         result = ode_solver.solve_symbolic_ode(ode_expr)
         
         if result['success']:
-            st.success("✅ ODE solved symbolically")
+            st.success("ODE solved symbolically")
             
             st.markdown("**Solution:**")
             st.latex(sp.latex(result['solution']))
@@ -685,7 +714,7 @@ def solve_ode_symbolic(ode_expr):
             st.latex(sp.latex(result['ode_expr']))
         
         else:
-            st.error(f"❌ Error: {result['error']}")
+            st.error(f"Error: {result['error']}")
             st.info("Try numerical methods if symbolic solution fails")
     
     except Exception as e:
@@ -716,7 +745,7 @@ def solve_ode_numerical(func_expr, y0, x_span, method, num_points):
                 result['y_values'] = result['y_values'][0]  # Extract first component
         
         if result['success']:
-            st.success(f"✅ ODE solved using {result['method']}")
+            st.success(f"ODE solved using {result['method']}")
             
             # Plot solution
             fig = go.Figure()
@@ -733,7 +762,7 @@ def solve_ode_numerical(func_expr, y0, x_span, method, num_points):
                 yaxis_title="y"
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             
             # Solution statistics
             col1, col2, col3 = st.columns(3)
@@ -745,7 +774,7 @@ def solve_ode_numerical(func_expr, y0, x_span, method, num_points):
                 st.metric("Points Computed", len(result['x_values']))
         
         else:
-            st.error(f"❌ Error: {result['error']}")
+            st.error(f"Error: {result['error']}")
     
     except Exception as e:
         st.error(f"Error solving ODE numerically: {str(e)}")
@@ -757,12 +786,12 @@ def solve_second_order_ode(ode_expr):
         result = ode_solver.solve_symbolic_ode(ode_expr)
         
         if result['success']:
-            st.success("✅ Second order ODE solved")
+            st.success("Second order ODE solved")
             
             st.markdown("**Solution:**")
             st.latex(sp.latex(result['solution']))
         else:
-            st.error(f"❌ Error: {result['error']}")
+            st.error(f"Error: {result['error']}")
             st.info("Second order ODEs often require specific techniques. Consider simplifying or using numerical methods.")
     
     except Exception as e:
@@ -776,7 +805,7 @@ def solve_ode_system(equations, initial_conditions, x_span, variables, method):
         )
         
         if result['success']:
-            st.success(f"✅ ODE system solved using {result['method']}")
+            st.success(f"ODE system solved using {result['method']}")
             
             # Plot solutions
             fig = go.Figure()
@@ -795,7 +824,7 @@ def solve_ode_system(equations, initial_conditions, x_span, variables, method):
                 yaxis_title="y"
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             
             # Phase portrait for 2D systems
             if len(variables) == 2:
@@ -815,10 +844,11 @@ def solve_ode_system(equations, initial_conditions, x_span, variables, method):
                     yaxis_title=variables[1]
                 )
                 
-                st.plotly_chart(fig_phase, use_container_width=True)
+                st.plotly_chart(fig_phase, width='stretch')
         
         else:
-            st.error(f"❌ Error: {result['error']}")
+            st.error(f"Error: {result['error']}")
     
     except Exception as e:
         st.error(f"Error solving ODE system: {str(e)}")
+

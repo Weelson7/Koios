@@ -5,6 +5,9 @@ from scipy.optimize import fsolve
 from typing import Dict, List, Tuple, Optional, Union, Callable, Any
 from dataclasses import dataclass
 from enum import Enum
+from utils.exceptions import (
+    InvalidInputError, ConvergenceError, ConfigurationError, NumericalInstabilityError
+)
 
 class ODEType(Enum):
     """Types of differential equations"""

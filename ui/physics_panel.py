@@ -5,7 +5,16 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 from core.physics_simulator import physics_simulator
 from utils.ui_helpers import run_task, copy_button
+from utils.exceptions import InvalidInputError, NumericalInstabilityError
 import math
+
+# Example physics simulations for quick loading
+PHYSICS_EXAMPLES = {
+    "Classic Projectile": {"sim": "projectile_motion", "params": {"v0": 50, "angle": 45}},
+    "Simple Pendulum": {"sim": "pendulum", "params": {"length": 1.0, "angle0": 30}},
+    "Damped Oscillator": {"sim": "damped_oscillator", "params": {"k": 10, "m": 1, "c": 0.5}},
+    "RC Circuit": {"sim": "circuit_rc", "params": {"R": 1000, "C": 1e-6}},
+}
 
 def render_physics_panel():
     """Render the physics simulations panel"""
@@ -16,11 +25,31 @@ def render_physics_panel():
         <p style='margin: 0.5rem 0 0 0; color: #B0BEC5;'>Interactive physics simulations with real-time parameter adjustment</p>
     </div>
     """, unsafe_allow_html=True)
+    
+    # Example selector
+    st.markdown("**Load Example:**")
+    col_ex1, col_ex2 = st.columns([3, 1])
+    with col_ex1:
+        example_choice = st.selectbox(
+            "Choose an example:",
+            [""] + list(PHYSICS_EXAMPLES.keys()),
+            help="Select an example simulation"
+        )
+    with col_ex2:
+        if st.button("Load Example", disabled=not example_choice):
+            if example_choice in PHYSICS_EXAMPLES:
+                st.session_state.physics_example = PHYSICS_EXAMPLES[example_choice]
+                st.rerun()
+    
+    st.markdown("---")
 
     # Get available simulations
     available_sims = physics_simulator.get_available_simulations()
 
-    # Simulation selection
+    # Simulation selection - use session state example if available
+    example_data = st.session_state.get("physics_example", {})
+    default_sim = example_data.get("sim", "projectile_motion")
+    
     simulation_name = st.selectbox(
         "Select Physics Simulation:",
         [
@@ -58,6 +87,75 @@ def render_physics_panel():
              "crystallography",
              "optics_lenses"
          ],
+        index=[
+             "projectile_motion",
+             "simple_harmonic_motion",
+             "damped_oscillator",
+             "pendulum",
+             "circuit_rc",
+             "circuit_rl",
+             "circuit_rlc",
+             "electromagnetic_wave",
+             "doppler_effect",
+             "wave_interference",
+             "heat_conduction",
+             "orbital_motion",
+             "three_body_orbital",
+             "four_body_orbital",
+             "quantum_harmonic_oscillator",
+             "blackbody_radiation",
+             "fluid_flow",
+             "electromagnetic_field",
+             "photoelectric_effect",
+             "compton_scattering",
+             "relativity_time_dilation",
+             "nuclear_decay",
+             "particle_accelerator",
+             "gravitational_waves",
+             "plasma_confinement",
+             "superconductivity",
+             "quantum_tunneling",
+             "laser_physics",
+             "solid_state_physics",
+             "chaos_theory",
+             "quantum_mechanics",
+             "crystallography",
+             "optics_lenses"
+         ].index(default_sim) if default_sim in [
+             "projectile_motion",
+             "simple_harmonic_motion",
+             "damped_oscillator",
+             "pendulum",
+             "circuit_rc",
+             "circuit_rl",
+             "circuit_rlc",
+             "electromagnetic_wave",
+             "doppler_effect",
+             "wave_interference",
+             "heat_conduction",
+             "orbital_motion",
+             "three_body_orbital",
+             "four_body_orbital",
+             "quantum_harmonic_oscillator",
+             "blackbody_radiation",
+             "fluid_flow",
+             "electromagnetic_field",
+             "photoelectric_effect",
+             "compton_scattering",
+             "relativity_time_dilation",
+             "nuclear_decay",
+             "particle_accelerator",
+             "gravitational_waves",
+             "plasma_confinement",
+             "superconductivity",
+             "quantum_tunneling",
+             "laser_physics",
+             "solid_state_physics",
+             "chaos_theory",
+             "quantum_mechanics",
+             "crystallography",
+             "optics_lenses"
+         ] else 0,
         format_func=lambda x: {
             'projectile_motion': 'Projectile Motion',
             'simple_harmonic_motion': 'Simple Harmonic Motion',
@@ -137,9 +235,13 @@ def render_projectile_motion():
     # Parameter inputs
     col1, col2, col3 = st.columns(3)
 
+    # Get example params if available
+    example_data = st.session_state.get("physics_example", {})
+    example_params = example_data.get("params", {}) if example_data.get("sim") == "projectile_motion" else {}
+
     with col1:
-        v0 = st.slider("Initial Velocity (m/s):", 1.0, 100.0, 20.0, 1.0)
-        angle = st.slider("Launch Angle (degrees):", 0.0, 90.0, 45.0, 1.0)
+        v0 = st.slider("Initial Velocity (m/s):", 1.0, 100.0, float(example_params.get("v0", 20.0)), 1.0)
+        angle = st.slider("Launch Angle (degrees):", 0.0, 90.0, float(example_params.get("angle", 45.0)), 1.0)
 
     with col2:
         g = st.slider("Gravity (m/s²):", 1.0, 20.0, 9.81, 0.1)
@@ -177,7 +279,7 @@ def render_projectile_motion():
 
         # Create visualization
         fig = create_projectile_plot(result, show_vectors, show_trajectory)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Additional analysis
         render_projectile_analysis(result, parameters)
@@ -193,9 +295,13 @@ def render_simple_harmonic_motion():
     # Parameter inputs
     col1, col2 = st.columns(2)
 
+    # Get example params if available
+    example_data = st.session_state.get("physics_example", {})
+    example_params = example_data.get("params", {}) if example_data.get("sim") == "simple_harmonic_motion" else {}
+
     with col1:
-        amplitude = st.slider("Amplitude:", 0.1, 5.0, 1.0, 0.1)
-        frequency = st.slider("Frequency (Hz):", 0.1, 5.0, 1.0, 0.1)
+        amplitude = st.slider("Amplitude:", 0.1, 5.0, float(example_params.get("amplitude", 1.0)), 0.1)
+        frequency = st.slider("Frequency (Hz):", 0.1, 5.0, float(example_params.get("frequency", 1.0)), 0.1)
 
     with col2:
         phase = st.slider("Phase (radians):", -math.pi, math.pi, 0.0, 0.1)
@@ -228,7 +334,7 @@ def render_simple_harmonic_motion():
 
         # Create visualization
         fig = create_shm_plot(result)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Phase space plot
         render_phase_space(result)
@@ -244,9 +350,13 @@ def render_damped_oscillator():
     # Parameter inputs
     col1, col2, col3 = st.columns(3)
 
+    # Get example params if available
+    example_data = st.session_state.get("physics_example", {})
+    example_params = example_data.get("params", {}) if example_data.get("sim") == "damped_oscillator" else {}
+
     with col1:
-        amplitude = st.slider("Initial Amplitude:", 0.1, 5.0, 1.0, 0.1, key="damp_amp")
-        omega0 = st.slider("Natural Frequency:", 0.5, 10.0, 2.0, 0.1)
+        amplitude = st.slider("Initial Amplitude:", 0.1, 5.0, float(example_params.get("amplitude", 1.0)), 0.1, key="damp_amp")
+        omega0 = st.slider("Natural Frequency:", 0.5, 10.0, float(example_params.get("omega0", 2.0)), 0.1)
 
     with col2:
         gamma = st.slider("Damping Coefficient:", 0.0, 2.0, 0.1, 0.01)
@@ -282,7 +392,7 @@ def render_damped_oscillator():
     if result['success']:
         # Create visualization
         fig = create_damped_oscillator_plot(result, parameters)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Energy analysis
         render_energy_analysis(result, parameters)
@@ -298,9 +408,13 @@ def render_pendulum_simulation():
     # Parameter inputs
     col1, col2, col3 = st.columns(3)
 
+    # Get example params if available
+    example_data = st.session_state.get("physics_example", {})
+    example_params = example_data.get("params", {}) if example_data.get("sim") == "pendulum" else {}
+
     with col1:
-        length = st.slider("Length (m):", 0.1, 5.0, 1.0, 0.1)
-        angle0 = st.slider("Initial Angle (degrees):", 1.0, 45.0, 10.0, 1.0)
+        length = st.slider("Length (m):", 0.1, 5.0, float(example_params.get("length", 1.0)), 0.1)
+        angle0 = st.slider("Initial Angle (degrees):", 1.0, 45.0, float(example_params.get("angle0", 10.0)), 1.0)
 
     with col2:
         g = st.slider("Gravity (m/s²):", 1.0, 20.0, 9.81, 0.1, key="pend_g")
@@ -338,7 +452,7 @@ def render_pendulum_simulation():
 
         # Create visualization
         fig = create_pendulum_plot(result, parameters, show_trajectory)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         if show_forces:
             render_pendulum_forces(result, parameters)
@@ -354,9 +468,13 @@ def render_rc_circuit():
     # Parameter inputs
     col1, col2, col3 = st.columns(3)
 
+    # Get example params if available
+    example_data = st.session_state.get("physics_example", {})
+    example_params = example_data.get("params", {}) if example_data.get("sim") == "circuit_rc" else {}
+
     with col1:
-        R = st.slider("Resistance (Ω):", 100.0, 10000.0, 1000.0, 100.0)
-        C = st.slider("Capacitance (μF):", 0.1, 100.0, 1.0, 0.1)
+        R = st.slider("Resistance (Ω):", 100.0, 10000.0, float(example_params.get("R", 1000.0)), 100.0)
+        C = st.slider("Capacitance (μF):", 0.1, 100.0, float(example_params.get("C", 1.0)), 0.1)
 
     with col2:
         V0 = st.slider("Initial Voltage (V):", -10.0, 10.0, 0.0, 0.5)
@@ -385,7 +503,7 @@ def render_rc_circuit():
     if result['success']:
         # Create visualization
         fig = create_rc_circuit_plot(result, parameters, tau)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Circuit analysis
         render_rc_analysis(result, parameters, tau)
@@ -443,7 +561,7 @@ def render_rl_circuit():
     if result['success']:
         # Create visualization
         fig = create_rl_circuit_plot(result, parameters, tau)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Circuit analysis
         render_rl_analysis(result, parameters, tau)
@@ -519,7 +637,7 @@ def render_rlc_circuit():
     if result['success']:
         # Create visualization
         fig = create_rlc_circuit_plot(result, parameters)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Power and energy analysis
         render_rlc_analysis(result, parameters)
@@ -910,7 +1028,7 @@ def render_projectile_analysis(result, parameters):
             height=300
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
 def render_phase_space(result):
     """Render phase space plot for SHM"""
@@ -931,7 +1049,7 @@ def render_phase_space(result):
         height=400
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     st.info("The phase space plot shows the relationship between position and velocity. For SHM, this creates an elliptical trajectory.")
 
@@ -982,7 +1100,7 @@ def render_energy_analysis(result, parameters):
         height=400
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 def render_pendulum_forces(result, parameters):
     """Render pendulum force analysis"""
@@ -1052,7 +1170,7 @@ def render_rc_analysis(result, parameters, tau):
             height=300
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
 def render_rlc_analysis(result, parameters):
     """Render RLC circuit analysis"""
@@ -1118,7 +1236,7 @@ def render_rlc_analysis(result, parameters):
     fig.update_xaxes(title_text="Time (ms)", row=1, col=2)
     fig.update_yaxes(title_text="Energy (J)", row=1, col=2)
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 def create_rl_circuit_plot(result, parameters, tau):
     """Create RL circuit visualization"""
@@ -1207,7 +1325,7 @@ def render_rl_analysis(result, parameters, tau):
             height=300
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
 def render_optics_lenses():
     """Render optical lenses simulation"""
@@ -1272,7 +1390,7 @@ def render_optics_lenses():
 
         # Create ray diagram
         fig = create_optics_ray_diagram(result, parameters)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Lens equation analysis
         render_lens_equation_analysis(result, parameters)
@@ -1487,7 +1605,7 @@ def render_electromagnetic_wave():
         fig.update_xaxes(title_text="Time (s)", row=1, col=2)
         fig.update_yaxes(title_text="Magnetic Field (T)", row=1, col=2)
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     else:
         st.error(f"Simulation failed: {result.get('error', 'Unknown error')}")
 
@@ -1552,7 +1670,7 @@ def render_doppler_effect():
             height=400
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Add explanation
         if source_velocity > 0 and observer_velocity == 0:
@@ -1619,7 +1737,7 @@ def render_wave_interference():
             height=500
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Beat frequency information
         beat_freq = abs(freq1 - freq2)
@@ -1681,7 +1799,7 @@ def render_heat_conduction():
             height=500
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Show temperature profile at specific times
         st.subheader("Temperature Profiles")
@@ -1702,7 +1820,7 @@ def render_heat_conduction():
             height=300
         )
 
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, width='stretch')
     else:
         st.error(f"Simulation failed: {result.get('error', 'Unknown error')}")
 
@@ -1787,7 +1905,7 @@ def render_orbital_motion():
             height=500
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Calculate orbital period
         orbital_period = 2 * math.pi * math.sqrt(initial_distance**3 / (G * mass_central))
@@ -1867,7 +1985,7 @@ def render_electromagnetic_field():
             height=500
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     else:
         st.error(f"Simulation failed: {result.get('error', 'Unknown error')}")
 
@@ -1961,7 +2079,7 @@ def render_photoelectric_effect():
         fig.update_xaxes(title_text="Intensity (W/m²)", row=1, col=2)
         fig.update_yaxes(title_text="Current (A)", row=1, col=2)
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Explanation
         if photon_energy_eV < work_function:
@@ -2042,7 +2160,7 @@ def render_relativity_time_dilation():
             height=400
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Twin paradox example
         st.subheader("Twin Paradox Example")
@@ -2127,7 +2245,7 @@ def render_nuclear_decay():
         fig.update_xaxes(title_text="Time (s)", row=1, col=2)
         fig.update_yaxes(title_text="Decay Rate (nuclei/s)", row=1, col=2)
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Statistics
         col1, col2, col3 = st.columns(3)
@@ -2247,7 +2365,7 @@ def render_particle_accelerator():
                 height=400
             )
 
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         # Energy comparison
         rest_energy = mass * (3e8)**2
@@ -2348,7 +2466,7 @@ def render_fluid_flow():
             yaxis=dict(range=[0, max(height1, height2)+1])
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Show Bernoulli's equation
         st.subheader("Bernoulli's Equation Analysis")
@@ -2530,7 +2648,7 @@ def render_three_body_orbital():
             showlegend=True
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Display orbital analysis
         st.subheader("Orbital Analysis")
@@ -2571,7 +2689,7 @@ def render_three_body_orbital():
             height=400
         )
 
-        st.plotly_chart(fig_dist, use_container_width=True)
+        st.plotly_chart(fig_dist, width='stretch')
 
         # Stability analysis
         initial_energy = (G * mass_primary * mass_tertiary / initial_distance + 
@@ -2753,7 +2871,7 @@ def render_four_body_orbital():
             showlegend=True
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Display orbital analysis
         st.subheader("Orbital Analysis")
@@ -2794,7 +2912,7 @@ def render_four_body_orbital():
             height=400
         )
 
-        st.plotly_chart(fig_dist, use_container_width=True)
+        st.plotly_chart(fig_dist, width='stretch')
 
         # System stability analysis
         st.subheader("System Stability")
@@ -2804,13 +2922,13 @@ def render_four_body_orbital():
         current_34_distance = distances_34[-1]
         
         if current_34_distance > 2 * initial_34_distance:
-            stability_status = "⚠️ Quaternary body appears to be escaping from tertiary"
+            stability_status = "Quaternary body appears to be escaping from tertiary"
             stability_color = "orange"
         elif current_34_distance < initial_34_distance / 2:
-            stability_status = "⚠️ Quaternary body appears to be falling into tertiary"
+            stability_status = "Quaternary body appears to be falling into tertiary"
             stability_color = "red"
         else:
-            stability_status = "✅ System appears stable"
+            stability_status = "System appears stable"
             stability_color = "green"
         
         st.markdown(f"**System Status:** <span style='color:{stability_color}'>{stability_status}</span>", 

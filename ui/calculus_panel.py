@@ -6,7 +6,17 @@ import plotly.graph_objects as go
 from core.calculus_engine import calculus_engine
 from core.expression_parser import expression_parser
 from core.advanced_ode_solver import AdvancedODESolver, ODEProblem, ODEType, SolverMethod
+from core.transforms_series_engine import transforms_series_engine
 from utils.ui_helpers import run_task, copy_button
+from utils.exceptions import InvalidInputError, ExpressionParseError, DomainError
+
+# Example expressions for calculus operations
+CALCULUS_EXAMPLES = {
+    "Polynomial Derivative": {"expr": "x**3 + 2*x**2 - 3*x + 1", "var": "x", "type": "derivative"},
+    "Trig Integration": {"expr": "sin(x)*cos(x)", "var": "x", "type": "integral"},
+    "Limit at Infinity": {"expr": "(x**2 + 1)/(2*x**2 - 3)", "var": "x", "type": "limit"},
+    "Taylor Series": {"expr": "exp(x)", "var": "x", "type": "series"},
+}
 
 def render_calculus_panel():
     """Render the calculus tools panel"""
@@ -18,9 +28,28 @@ def render_calculus_panel():
     </div>
     """, unsafe_allow_html=True)
     
+    # Example selector
+    st.markdown("**Load Example:**")
+    col_ex1, col_ex2 = st.columns([3, 1])
+    with col_ex1:
+        example_choice = st.selectbox(
+            "Choose an example:",
+            [""] + list(CALCULUS_EXAMPLES.keys()),
+            help="Select an example to auto-fill expression fields"
+        )
+    with col_ex2:
+        if st.button("Load Example", disabled=not example_choice):
+            if example_choice in CALCULUS_EXAMPLES:
+                ex = CALCULUS_EXAMPLES[example_choice]
+                st.session_state.calculus_example_expr = ex["expr"]
+                st.session_state.calculus_example_var = ex["var"]
+                st.rerun()
+    
+    st.markdown("---")
+    
     # Operation selection tabs
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-        "Derivatives", "Integrals", "Limits", "Series", "Function Analysis", "Multivariable Calculus", "Differential Equations"
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+        "Derivatives", "Integrals", "Limits", "Series", "Function Analysis", "Multivariable Calculus", "Differential Equations", "Transforms & Series"
     ])
     
     with tab1:
@@ -43,6 +72,9 @@ def render_calculus_panel():
     
     with tab7:
         render_differential_equations_section()
+    
+    with tab8:
+        render_transforms_series_section()
 
 def render_derivatives_section():
     """Render derivatives calculation section"""
@@ -53,12 +85,13 @@ def render_derivatives_section():
     with col1:
         expression = st.text_input(
             "Function f(x):",
+            value=st.session_state.get("calculus_example_expr", ""),
             placeholder="x^3 + 2*x^2 - 3*x + 1",
             key="derivative_expr"
         )
     
     with col2:
-        variable = st.text_input("Variable:", value="x", key="derivative_var")
+        variable = st.text_input("Variable:", value=st.session_state.get("calculus_example_var", "x"), key="derivative_var")
     
     with col3:
         order = st.number_input("Order:", min_value=1, max_value=5, value=1, key="derivative_order")
@@ -80,12 +113,13 @@ def render_integrals_section():
     with col1:
         expression = st.text_input(
             "Function f(x):",
+            value=st.session_state.get("calculus_example_expr", ""),
             placeholder="x^2 + sin(x)",
             key="integral_expr"
         )
     
     with col2:
-        variable = st.text_input("Variable:", value="x", key="integral_var")
+        variable = st.text_input("Variable:", value=st.session_state.get("calculus_example_var", "x"), key="integral_var")
     
     # Integral type selection
     integral_type = st.radio(
@@ -134,12 +168,13 @@ def render_limits_section():
     with col1:
         expression = st.text_input(
             "Function f(x):",
+            value=st.session_state.get("calculus_example_expr", ""),
             placeholder="sin(x)/x",
             key="limit_expr"
         )
     
     with col2:
-        variable = st.text_input("Variable:", value="x", key="limit_var")
+        variable = st.text_input("Variable:", value=st.session_state.get("calculus_example_var", "x"), key="limit_var")
     
     col1, col2 = st.columns(2)
     
@@ -183,12 +218,13 @@ def render_series_section():
     with col1:
         expression = st.text_input(
             "Function f(x):",
+            value=st.session_state.get("calculus_example_expr", ""),
             placeholder="exp(x)",
             key="series_expr"
         )
     
     with col2:
-        variable = st.text_input("Variable:", value="x", key="series_var")
+        variable = st.text_input("Variable:", value=st.session_state.get("calculus_example_var", "x"), key="series_var")
     
     col1, col2 = st.columns(2)
     
@@ -217,12 +253,13 @@ def render_function_analysis_section():
     with col1:
         expression = st.text_input(
             "Function f(x):",
+            value=st.session_state.get("calculus_example_expr", ""),
             placeholder="x^3 - 3*x^2 + 2*x",
             key="analysis_expr"
         )
     
     with col2:
-        variable = st.text_input("Variable:", value="x", key="analysis_var")
+        variable = st.text_input("Variable:", value=st.session_state.get("calculus_example_var", "x"), key="analysis_var")
     
     if expression:
         result = calculus_engine.analyze_function(expression, variable)
@@ -237,7 +274,7 @@ def render_function_analysis_section():
 def display_derivative_result(result, order):
     """Display derivative calculation results"""
     if result['success']:
-        st.success(f"✅ {order}{'st' if order == 1 else 'nd' if order == 2 else 'rd' if order == 3 else 'th'} derivative calculated successfully")
+        st.success(f"{order}{'st' if order == 1 else 'nd' if order == 2 else 'rd' if order == 3 else 'th'} derivative calculated successfully")
         
         col1, col2 = st.columns(2)
         
@@ -258,12 +295,12 @@ def display_derivative_result(result, order):
             st.latex(sp.latex(result['simplified_derivative']))
     
     else:
-        st.error(f"❌ Derivative calculation failed: {result['error']}")
+        st.error(f"Derivative calculation failed: {result['error']}")
 
 def display_integral_result(result, integral_type):
     """Display integral calculation results"""
     if result['success']:
-        st.success(f"✅ {integral_type} integral calculated successfully")
+        st.success(f"{integral_type} integral calculated successfully")
         
         col1, col2 = st.columns(2)
         
@@ -287,12 +324,12 @@ def display_integral_result(result, integral_type):
             st.latex(sp.latex(result['simplified_integral']))
     
     else:
-        st.error(f"❌ Integral calculation failed: {result['error']}")
+        st.error(f"Integral calculation failed: {result['error']}")
 
 def display_limit_result(result, limit_point, direction):
     """Display limit calculation results"""
     if result['success']:
-        st.success("✅ Limit calculated successfully")
+        st.success("Limit calculated successfully")
         
         col1, col2 = st.columns(2)
         
@@ -307,21 +344,20 @@ def display_limit_result(result, limit_point, direction):
         
         # Interpret result
         if result['limit'] == sp.oo:
-            st.info("🔼 Limit approaches positive infinity")
+            st.info("Limit approaches positive infinity")
         elif result['limit'] == -sp.oo:
-            st.info("🔽 Limit approaches negative infinity")
+            st.info("Limit approaches negative infinity")
         elif result['limit'].has(sp.oo):
-            st.warning("⚠️ Limit does not exist (involves infinity)")
+            st.warning("Limit does not exist (involves infinity)")
         else:
-            st.info(f"➡️ Limit exists and equals {result['limit']}")
-    
+            st.info(f"Limit exists and equals {result['limit']}")    
     else:
-        st.error(f"❌ Limit calculation failed: {result['error']}")
+        st.error(f"Limit calculation failed: {result['error']}")
 
 def display_series_result(result, point, order):
     """Display series expansion results"""
     if result['success']:
-        st.success("✅ Series expansion calculated successfully")
+        st.success("Series expansion calculated successfully")
         
         col1, col2 = st.columns(2)
         
@@ -335,15 +371,15 @@ def display_series_result(result, point, order):
             st.latex(sp.latex(result['series']))
         
         # Series information
-        st.info(f"ℹ️ {series_type} series expansion around x = {point} up to order {order}")
+        st.info(f"{series_type} series expansion around x = {point} up to order {order}")
     
     else:
-        st.error(f"❌ Series expansion failed: {result['error']}")
+        st.error(f"Series expansion failed: {result['error']}")
 
 def display_function_analysis(result):
     """Display comprehensive function analysis"""
     if result['success']:
-        st.success("✅ Function analysis completed successfully")
+        st.success("Function analysis completed successfully")
         
         # Derivatives
         col1, col2 = st.columns(2)
@@ -376,7 +412,7 @@ def display_function_analysis(result):
                 st.write("No inflection points found")
     
     else:
-        st.error(f"❌ Function analysis failed: {result['error']}")
+        st.error(f"Function analysis failed: {result['error']}")
 
 def compute_partial_derivatives(expression, variables):
     """Compute and display partial derivatives"""
@@ -391,7 +427,7 @@ def compute_partial_derivatives(expression, variables):
 def display_gradient_result(result):
     """Display gradient calculation results"""
     if result['success']:
-        st.success("✅ Gradient calculated successfully")
+        st.success("Gradient calculated successfully")
         
         st.markdown("**Gradient Vector:**")
         gradient_components = []
@@ -402,7 +438,7 @@ def display_gradient_result(result):
         st.latex(gradient_latex)
     
     else:
-        st.error(f"❌ Gradient calculation failed: {result['error']}")
+        st.error(f"Gradient calculation failed: {result['error']}")
 
 def perform_numerical_integration(expression, variable, lower_limit, upper_limit):
     """Perform numerical integration for comparison"""
@@ -480,7 +516,7 @@ def visualize_series_convergence(expression, variable, point, max_order):
             hovermode='x unified'
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     
     except Exception as e:
         st.error(f"Visualization failed: {str(e)}")
@@ -1588,7 +1624,7 @@ def render_first_order_ode(solver):
                     hovermode='x unified'
                 )
                 
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
                 
                 # Display some solution values
                 with st.expander("Solution Values"):
@@ -1685,7 +1721,7 @@ def render_second_order_ode(solver):
                     hovermode='x unified'
                 )
                 
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
                 
                 # Phase portrait
                 fig2 = go.Figure()
@@ -1704,7 +1740,7 @@ def render_second_order_ode(solver):
                     hovermode='closest'
                 )
                 
-                st.plotly_chart(fig2, use_container_width=True)
+                st.plotly_chart(fig2, width='stretch')
             else:
                 st.error(f"Failed to solve ODE: {solution.message}")
                 
@@ -1777,7 +1813,7 @@ def render_system_odes(solver):
                         height=600
                     )
                     
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                     
                     # Time series
                     fig2 = go.Figure()
@@ -1792,7 +1828,7 @@ def render_system_odes(solver):
                         hovermode='x unified'
                     )
                     
-                    st.plotly_chart(fig2, use_container_width=True)
+                    st.plotly_chart(fig2, width='stretch')
                     
             except Exception as e:
                 st.error(f"Error solving system: {str(e)}")
@@ -1842,7 +1878,7 @@ def render_system_odes(solver):
                         hovermode='closest'
                     )
                     
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                     
                     # Time series
                     fig2 = go.Figure()
@@ -1855,7 +1891,7 @@ def render_system_odes(solver):
                         hovermode='x unified'
                     )
                     
-                    st.plotly_chart(fig2, use_container_width=True)
+                    st.plotly_chart(fig2, width='stretch')
                     
             except Exception as e:
                 st.error(f"Error solving system: {str(e)}")
@@ -1969,10 +2005,580 @@ def render_pde(solver):
                     }]
                 )
                 
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
                 
                 if solution['stability_parameter'] > 0.5:
                     st.warning(f"Warning: Stability parameter r = {solution['stability_parameter']:.3f} > 0.5. Solution may be unstable.")
                 
             except Exception as e:
                 st.error(f"Error solving PDE: {str(e)}")
+
+
+def render_transforms_series_section():
+    """Render transforms and series analysis section"""
+    st.subheader("Transforms & Series Analysis")
+    
+    st.info("""
+    This tool provides comprehensive transform and series analysis including:
+    - Laplace and Fourier transforms
+    - Transfer function calculation from differential equations
+    - Differential equation solving using transforms
+    - Solution decomposition (transient/steady-state, zero-input/zero-state)
+    - Fourier series expansion
+    """)
+    
+    # Sub-tabs for different operations
+    subtab1, subtab2, subtab3, subtab4, subtab5 = st.tabs([
+        "Laplace Transform", "Fourier Transform", "Transfer Functions", "DE Solving", "Fourier Series"
+    ])
+    
+    with subtab1:
+        render_laplace_transform_tab()
+    
+    with subtab2:
+        render_fourier_transform_tab()
+    
+    with subtab3:
+        render_transfer_function_tab()
+    
+    with subtab4:
+        render_de_solving_tab()
+    
+    with subtab5:
+        render_fourier_series_tab()
+
+
+def render_laplace_transform_tab():
+    """Render Laplace transform section"""
+    st.markdown("### Laplace Transform")
+    
+    transform_type = st.radio(
+        "Transform Type:",
+        ["Forward Transform", "Inverse Transform"],
+        key="laplace_type",
+        horizontal=True
+    )
+    
+    col1, col2, col3 = st.columns([3, 1, 1])
+    
+    if transform_type == "Forward Transform":
+        with col1:
+            expression = st.text_input(
+                "Time Domain Function f(t):",
+                placeholder="sin(t), exp(-t), t**2",
+                key="laplace_forward_expr"
+            )
+        with col2:
+            t_var = st.text_input("Time Variable:", value="t", key="laplace_t_var")
+        with col3:
+            s_var = st.text_input("Laplace Variable:", value="s", key="laplace_s_var")
+        
+        if expression:
+            if st.button("Compute Laplace Transform", key="compute_laplace"):
+                with st.spinner("Computing Laplace transform..."):
+                    result = transforms_series_engine.laplace_transform(expression, t_var, s_var)
+                    
+                    if result['success']:
+                        st.success("Laplace transform computed successfully")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown("**Time Domain f(t):**")
+                            st.latex(sp.latex(result['original_expression']))
+                        
+                        with col2:
+                            st.markdown(f"**Laplace Domain F({s_var}):**")
+                            st.latex(sp.latex(result['transform']))
+                        
+                        st.markdown("**LaTeX Code:**")
+                        copy_button(sp.latex(result['transform']), "laplace_result", "Copy LaTeX")
+                    else:
+                        st.error(f"Transform failed: {result['error']}")
+    
+    else:  # Inverse Transform
+        with col1:
+            expression = st.text_input(
+                "Laplace Domain Function F(s):",
+                placeholder="1/(s+1), s/(s**2+1)",
+                key="laplace_inverse_expr"
+            )
+        with col2:
+            s_var = st.text_input("Laplace Variable:", value="s", key="laplace_inv_s_var")
+        with col3:
+            t_var = st.text_input("Time Variable:", value="t", key="laplace_inv_t_var")
+        
+        if expression:
+            if st.button("Compute Inverse Laplace Transform", key="compute_inv_laplace"):
+                with st.spinner("Computing inverse Laplace transform..."):
+                    result = transforms_series_engine.inverse_laplace_transform(expression, s_var, t_var)
+                    
+                    if result['success']:
+                        st.success("Inverse Laplace transform computed successfully")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown(f"**Laplace Domain F({s_var}):**")
+                            st.latex(sp.latex(result['original_expression']))
+                        
+                        with col2:
+                            st.markdown("**Time Domain f(t):**")
+                            st.latex(sp.latex(result['transform']))
+                        
+                        st.markdown("**LaTeX Code:**")
+                        copy_button(sp.latex(result['transform']), "inv_laplace_result", "Copy LaTeX")
+                    else:
+                        st.error(f"Inverse transform failed: {result['error']}")
+
+
+def render_fourier_transform_tab():
+    """Render Fourier transform section"""
+    st.markdown("### Fourier Transform")
+    
+    transform_type = st.radio(
+        "Transform Type:",
+        ["Forward Transform", "Inverse Transform"],
+        key="fourier_type",
+        horizontal=True
+    )
+    
+    col1, col2, col3 = st.columns([3, 1, 1])
+    
+    if transform_type == "Forward Transform":
+        with col1:
+            expression = st.text_input(
+                "Time Domain Function f(t):",
+                placeholder="exp(-abs(t)), exp(-t**2)",
+                key="fourier_forward_expr"
+            )
+        with col2:
+            t_var = st.text_input("Time Variable:", value="t", key="fourier_t_var")
+        with col3:
+            omega_var = st.text_input("Frequency Variable:", value="omega", key="fourier_omega_var")
+        
+        if expression:
+            if st.button("Compute Fourier Transform", key="compute_fourier"):
+                with st.spinner("Computing Fourier transform..."):
+                    result = transforms_series_engine.fourier_transform(expression, t_var, omega_var)
+                    
+                    if result['success']:
+                        st.success("Fourier transform computed successfully")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown("**Time Domain f(t):**")
+                            st.latex(sp.latex(result['original_expression']))
+                        
+                        with col2:
+                            st.markdown(f"**Frequency Domain F({omega_var}):**")
+                            st.latex(sp.latex(result['transform']))
+                        
+                        st.markdown("**LaTeX Code:**")
+                        copy_button(sp.latex(result['transform']), "fourier_result", "Copy LaTeX")
+                    else:
+                        st.error(f"Transform failed: {result['error']}")
+    
+    else:  # Inverse Transform
+        with col1:
+            expression = st.text_input(
+                "Frequency Domain Function F(omega):",
+                placeholder="1/(1+omega**2)",
+                key="fourier_inverse_expr"
+            )
+        with col2:
+            omega_var = st.text_input("Frequency Variable:", value="omega", key="fourier_inv_omega_var")
+        with col3:
+            t_var = st.text_input("Time Variable:", value="t", key="fourier_inv_t_var")
+        
+        if expression:
+            if st.button("Compute Inverse Fourier Transform", key="compute_inv_fourier"):
+                with st.spinner("Computing inverse Fourier transform..."):
+                    result = transforms_series_engine.inverse_fourier_transform(expression, omega_var, t_var)
+                    
+                    if result['success']:
+                        st.success("Inverse Fourier transform computed successfully")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown(f"**Frequency Domain F({omega_var}):**")
+                            st.latex(sp.latex(result['original_expression']))
+                        
+                        with col2:
+                            st.markdown("**Time Domain f(t):**")
+                            st.latex(sp.latex(result['transform']))
+                        
+                        st.markdown("**LaTeX Code:**")
+                        copy_button(sp.latex(result['transform']), "inv_fourier_result", "Copy LaTeX")
+                    else:
+                        st.error(f"Inverse transform failed: {result['error']}")
+
+
+def render_transfer_function_tab():
+    """Render transfer function analysis section"""
+    st.markdown("### Transfer Function Analysis")
+    
+    st.markdown("**Analyze Transfer Function:**")
+    
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        transfer_function = st.text_input(
+            "Transfer Function H(s):",
+            placeholder="1/(s**2 + 2*s + 1), (s+1)/(s**2 + 3*s + 2)",
+            key="transfer_func"
+        )
+    with col2:
+        s_var = st.text_input("Laplace Variable:", value="s", key="transfer_s_var")
+    
+    if transfer_function:
+        if st.button("Analyze Transfer Function", key="analyze_tf"):
+            with st.spinner("Analyzing transfer function..."):
+                result = transforms_series_engine.analyze_frequency_response(transfer_function, s_var)
+                
+                if result['success']:
+                    st.success("Transfer function analyzed successfully")
+                    
+                    st.markdown("**Transfer Function:**")
+                    st.latex(f"H(s) = {sp.latex(result['transfer_function'])}")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.markdown("**Poles:**")
+                        if result['poles']:
+                            for i, pole in enumerate(result['poles']):
+                                st.latex(f"p_{i+1} = {sp.latex(pole)}")
+                        else:
+                            st.write("No poles")
+                    
+                    with col2:
+                        st.markdown("**Zeros:**")
+                        if result['zeros']:
+                            for i, zero in enumerate(result['zeros']):
+                                st.latex(f"z_{i+1} = {sp.latex(zero)}")
+                        else:
+                            st.write("No zeros")
+                    
+                    with col3:
+                        st.markdown("**Stability:**")
+                        if result['stable']:
+                            st.success("System is STABLE")
+                        else:
+                            st.error("System is UNSTABLE")
+                    
+                    st.markdown("---")
+                    st.markdown("**Frequency Response:**")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown("**Magnitude:**")
+                        st.latex(f"|H(j\\omega)| = {sp.latex(result['magnitude'])}")
+                    
+                    with col2:
+                        st.markdown("**Phase:**")
+                        st.latex(f"\\angle H(j\\omega) = {sp.latex(result['phase'])}")
+                else:
+                    st.error(f"Analysis failed: {result['error']}")
+    
+    st.markdown("---")
+    st.markdown("**Compute Transfer Function from Differential Equation:**")
+    st.info("Note: This feature provides basic transfer function computation. For complex equations, manual conversion may be needed.")
+
+
+def render_de_solving_tab():
+    """Render differential equation solving with transforms"""
+    st.markdown("### Solve Differential Equations Using Transforms")
+    
+    method = st.radio(
+        "Transform Method:",
+        ["Laplace Transform", "Fourier Transform"],
+        key="de_method",
+        horizontal=True
+    )
+    
+    if method == "Laplace Transform":
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            de_expr = st.text_input(
+                "Differential Equation:",
+                placeholder="Derivative(y(t), t, 2) + 2*Derivative(y(t), t) + y(t) - u(t)",
+                key="de_laplace_expr",
+                help="Enter as equation equal to 0, or just the left side"
+            )
+        
+        with col2:
+            t_var = st.text_input("Time Variable:", value="t", key="de_t_var")
+        
+        st.markdown("**Input Function:**")
+        input_func = st.text_input(
+            "Input u(t):",
+            placeholder="1 (step), sin(t), exp(-t)",
+            value="1",
+            key="de_input"
+        )
+        
+        st.markdown("**Initial Conditions:**")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            y0 = st.number_input("y(0):", value=0.0, key="de_y0")
+        with col2:
+            y0_prime = st.number_input("y'(0):", value=0.0, key="de_y0_prime")
+        with col3:
+            use_higher = st.checkbox("Higher order ICs", key="de_higher_ic")
+        
+        initial_conditions = {
+            'y(0)': y0,
+            "y'(0)": y0_prime
+        }
+        
+        if use_higher:
+            y0_double_prime = st.number_input("y''(0):", value=0.0, key="de_y0_double_prime")
+            initial_conditions["y''(0)"] = y0_double_prime
+        
+        if de_expr and input_func:
+            if st.button("Solve Using Laplace Transform", key="solve_de_laplace"):
+                with st.spinner("Solving differential equation..."):
+                    result = transforms_series_engine.solve_de_with_laplace(
+                        de_expr, initial_conditions, input_func, t_var
+                    )
+                    
+                    if result['success']:
+                        st.success("Differential equation solved successfully")
+                        
+                        if result['solution']:
+                            st.markdown("**Complete Solution:**")
+                            st.latex(f"y(t) = {sp.latex(result['solution'])}")
+                        
+                        st.markdown("---")
+                        st.markdown("**Solution Decomposition:**")
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.markdown("**Transient Response:**")
+                            if result['transient']:
+                                st.latex(f"y_{{tr}}(t) = {sp.latex(result['transient'])}")
+                                st.info("Decays to zero as t → ∞")
+                            else:
+                                st.write("No transient component")
+                        
+                        with col2:
+                            st.markdown("**Steady-State Response:**")
+                            if result['steady_state']:
+                                st.latex(f"y_{{ss}}(t) = {sp.latex(result['steady_state'])}")
+                                st.info("Persists as t → ∞")
+                            else:
+                                st.write("No steady-state component")
+                        
+                        if result['zero_input']:
+                            st.markdown("---")
+                            st.markdown("**Zero-Input Response:**")
+                            st.latex(f"y_{{zi}}(t) = {sp.latex(result['zero_input'])}")
+                        
+                        if result['zero_state']:
+                            st.markdown("**Zero-State Response:**")
+                            st.latex(f"y_{{zs}}(t) = {sp.latex(result['zero_state'])}")
+                    else:
+                        st.error(f"Solving failed: {result['error']}")
+    
+    else:  # Fourier Transform
+        st.warning("⚠️ **Fourier Transform DE Solving Not Yet Implemented**")
+        st.info("""
+        Fourier transform method for differential equations is best suited for spatial problems with boundary conditions.
+        
+        **Current Status:** This feature is under development and not yet available.
+        
+        **Recommendation:** Please use the **Laplace Transform** method for time-domain differential equations.
+        """)
+        
+        # Disabled UI elements to show what's planned
+        st.markdown("**Planned Features (Coming Soon):**")
+        st.text("• Spatial domain differential equations")
+        st.text("• Boundary condition handling")
+        st.text("• Frequency domain analysis")
+        
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            st.text_input(
+                "Differential Equation:",
+                placeholder="Feature under development",
+                key="de_fourier_expr",
+                disabled=True
+            )
+        
+        with col2:
+            st.text_input("Spatial Variable:", value="x", key="de_x_var", disabled=True)
+        
+        st.button("Solve Using Fourier Transform", key="solve_de_fourier", disabled=True)
+
+
+def render_fourier_series_tab():
+    """Render Fourier series expansion section"""
+    st.markdown("### Fourier Series Expansion")
+    
+    st.info("Expand periodic functions as Fourier series with sine and cosine terms.")
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        expression = st.text_input(
+            "Periodic Function f(x):",
+            placeholder="x, x**2, abs(x)",
+            key="fourier_series_expr"
+        )
+    
+    with col2:
+        variable = st.text_input("Variable:", value="x", key="fourier_series_var")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        period = st.number_input(
+            "Period:",
+            value=2*np.pi,
+            min_value=0.1,
+            key="fourier_series_period",
+            help="Period of the function (default: 2π)"
+        )
+    
+    with col2:
+        n_terms = st.number_input(
+            "Number of Terms:",
+            value=5,
+            min_value=1,
+            max_value=20,
+            key="fourier_series_terms"
+        )
+    
+    if expression:
+        if st.button("Compute Fourier Series", key="compute_fourier_series"):
+            with st.spinner("Computing Fourier series..."):
+                result = transforms_series_engine.compute_fourier_series(
+                    expression, variable, period, n_terms
+                )
+                
+                if result['success']:
+                    st.success(f"Fourier series computed with {n_terms} terms")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**Original Function:**")
+                        st.latex(f"f({variable}) = {sp.latex(result['original_expression'])}")
+                    
+                    with col2:
+                        st.markdown("**Period:**")
+                        st.metric("T", f"{period:.4g}")
+                    
+                    st.markdown("---")
+                    st.markdown("**Fourier Series (Trigonometric Form):**")
+                    st.latex(sp.latex(result['fourier_series']))
+                    
+                    st.markdown("---")
+                    st.markdown("**Coefficients:**")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.markdown("**a₀ (DC component):**")
+                        st.latex(f"a_0 = {sp.latex(result['a0'])}")
+                    
+                    with col2:
+                        st.markdown("**aₙ (cosine coefficients):**")
+                        for n, coeff in list(result['an_coefficients'].items())[:5]:
+                            st.latex(f"a_{n} = {sp.latex(coeff)}")
+                    
+                    with col3:
+                        st.markdown("**bₙ (sine coefficients):**")
+                        for n, coeff in list(result['bn_coefficients'].items())[:5]:
+                            st.latex(f"b_{n} = {sp.latex(coeff)}")
+                    
+                    st.markdown("---")
+                    st.markdown("**Complex Exponential Form:**")
+                    st.latex(sp.latex(result['complex_form']))
+                    
+                    # Visualization
+                    st.markdown("---")
+                    st.markdown("**Series Approximation Visualization:**")
+                    try:
+                        visualize_fourier_series(
+                            expression, variable, period, n_terms, result['fourier_series']
+                        )
+                    except Exception as e:
+                        st.warning(f"Visualization not available: {str(e)}")
+                else:
+                    st.error(f"Fourier series computation failed: {result['error']}")
+
+
+def visualize_fourier_series(original_expr: str, variable: str, period: float, 
+                            n_terms: int, fourier_series):
+    """Visualize Fourier series approximation"""
+    try:
+        # Parse expressions
+        original = expression_parser.parse(original_expr)
+        var_sym = sp.Symbol(variable, real=True)
+        
+        # Create numerical functions
+        L = period / 2
+        x_vals = np.linspace(-L, L, 1000)
+        
+        # Original function
+        try:
+            f_original = sp.lambdify(var_sym, original, 'numpy')
+            y_original = f_original(x_vals)
+        except:
+            st.warning("Cannot plot original function")
+            return
+        
+        # Fourier series
+        f_series = sp.lambdify(var_sym, fourier_series, 'numpy')
+        y_series = f_series(x_vals)
+        
+        # Create plot
+        fig = go.Figure()
+        
+        # Original function
+        fig.add_trace(go.Scatter(
+            x=x_vals,
+            y=y_original,
+            mode='lines',
+            name='Original Function',
+            line=dict(color='blue', width=3)
+        ))
+        
+        # Fourier series approximation
+        fig.add_trace(go.Scatter(
+            x=x_vals,
+            y=y_series,
+            mode='lines',
+            name=f'Fourier Series ({n_terms} terms)',
+            line=dict(color='red', width=2, dash='dash')
+        ))
+        
+        fig.update_layout(
+            title=f"Fourier Series Approximation with {n_terms} Terms",
+            xaxis_title=variable,
+            yaxis_title=f"f({variable})",
+            hovermode='x unified',
+            template='plotly_dark',
+            height=500
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Error analysis
+        error = np.abs(y_original - y_series)
+        max_error = np.max(error)
+        mean_error = np.mean(error)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Maximum Error", f"{max_error:.6f}")
+        with col2:
+            st.metric("Mean Absolute Error", f"{mean_error:.6f}")
+        
+    except Exception as e:
+        st.error(f"Visualization error: {str(e)}")
+
+

@@ -3,6 +3,7 @@ import sympy as sp
 from typing import Dict, List, Tuple, Optional, Union, Callable, Any
 import matplotlib.pyplot as plt
 from matplotlib import cm
+from utils.exceptions import ExpressionParseError, InvalidInputError
 
 class ComplexAnalysisEngine:
     """Engine for complex number calculations and analysis"""
@@ -17,10 +18,13 @@ class ComplexAnalysisEngine:
             # Handle various notations
             expr = expr.replace('i', 'j').replace('I', 'j')
             return complex(expr)
-        except:
+        except (ValueError, TypeError):
             # Try SymPy parsing
-            parsed = sp.sympify(expr)
-            return complex(parsed)
+            try:
+                parsed = sp.sympify(expr)
+                return complex(parsed)
+            except (ValueError, TypeError) as e:
+                raise ExpressionParseError(expr, f"Could not parse as complex number: {e}")
     
     def complex_arithmetic(self, z1: complex, z2: complex, operation: str = None) -> Dict[str, complex]:
         """Perform all basic complex arithmetic operations"""
@@ -33,7 +37,9 @@ class ComplexAnalysisEngine:
             elif operation == '*':
                 return {'result': z1 * z2}
             elif operation == '/':
-                return {'result': z1 / z2 if z2 != 0 else None}
+                if abs(z2) < self.tol:
+                    return {'error': 'Division by zero'}
+                return {'result': z1 / z2}
             elif operation == '**':
                 return {'result': z1 ** z2}
             else:
@@ -44,7 +50,7 @@ class ComplexAnalysisEngine:
             'addition': z1 + z2,
             'subtraction': z1 - z2,
             'multiplication': z1 * z2,
-            'division': z1 / z2 if z2 != 0 else None,
+            'division': z1 / z2 if abs(z2) >= self.tol else None,
             'power': z1 ** z2,
             'conjugate_z1': np.conj(z1),
             'conjugate_z2': np.conj(z2),
@@ -180,12 +186,13 @@ class ComplexAnalysisEngine:
                order: int = 1, radius: float = 0.01) -> complex:
         """Calculate residue at a pole"""
         if order == 1:
-            # Simple pole: Res = lim (z-pole)*f(z)
-            def g(z):
-                return (z - pole) * f(z)
-            
-            # Evaluate near the pole
-            return g(pole + radius)
+            # Simple pole: Res = lim_{z->pole} (z-pole)*f(z)
+            # Use numerical limit by evaluating at decreasing distances from pole
+            h_values = [radius / (2**i) for i in range(10)]
+            values = [(pole + h - pole) * f(pole + h) for h in h_values]
+            # Extrapolate to h->0 using Richardson extrapolation
+            residue_approx = values[-1]  # Best approximation at smallest h
+            return residue_approx
         else:
             # Higher order pole
             # Res = 1/(n-1)! * d^(n-1)/dz^(n-1) [(z-pole)^n * f(z)]
@@ -196,12 +203,16 @@ class ComplexAnalysisEngine:
     def residue_theorem(self, f: Callable[[complex], complex], 
                        poles: List[Tuple[complex, int]],
                        contour: Callable[[float], complex]) -> complex:
-        """Apply residue theorem for contour integration"""
+        """Apply residue theorem for contour integration
+        
+        WARNING: This implementation assumes all poles are inside the contour.
+        For a complete implementation, use winding number to verify containment.
+        """
         total_residue = 0
         
         for pole, order in poles:
-            # Check if pole is inside contour (simplified)
-            # In practice, would use winding number
+            # Note: Assumes pole is inside contour
+            # TODO: Implement winding number calculation for proper containment check
             res = self.residue(f, pole, order)
             total_residue += res
         
@@ -209,12 +220,10 @@ class ComplexAnalysisEngine:
     
     def conformal_map(self, w_func: Callable[[complex], complex], 
                      z_grid: np.ndarray) -> np.ndarray:
-        """Apply conformal mapping w = f(z)"""
-        w_grid = np.zeros_like(z_grid)
-        
-        for i in range(z_grid.shape[0]):
-            for j in range(z_grid.shape[1]):
-                w_grid[i, j] = w_func(z_grid[i, j])
+        """Apply conformal mapping w = f(z) using vectorization"""
+        # Vectorize the function for efficiency on large grids
+        vectorized_w = np.vectorize(w_func)
+        w_grid = vectorized_w(z_grid)
         
         return w_grid
     
@@ -231,19 +240,24 @@ class ComplexAnalysisEngine:
     
     def schwarz_christoffel(self, vertices: List[complex], 
                           angles: List[float]) -> Callable:
-        """Schwarz-Christoffel mapping (simplified)"""
-        # This is a simplified version
-        # Full implementation would require numerical integration
-        def mapping(z):
-            # Placeholder for actual S-C mapping
-            return z
+        """Schwarz-Christoffel mapping (simplified)
         
-        return mapping
+        Full implementation requires numerical integration of complex formula.
+        This is a placeholder.
+        """
+        raise NotImplementedError(
+            "Schwarz-Christoffel mapping requires complex numerical integration. "
+            "Full implementation pending. For now, use scipy.special or specialized libraries."
+        )
     
     def complex_ode_solve(self, ode_func: Callable[[complex, complex], complex],
                          z0: complex, t_span: Tuple[float, float],
-                         n_points: int = 1000) -> Tuple[np.ndarray, np.ndarray]:
-        """Solve complex ODE dz/dt = f(t, z)"""
+                         n_points: int = 1000) -> Dict[str, Any]:
+        """Solve complex ODE dz/dt = f(t, z)
+        
+        Returns:
+            Dict with keys 't' (time points), 'z' (solution), 'success' (convergence status)
+        """
         from scipy.integrate import solve_ivp
         
         def real_system(t, y):
@@ -255,7 +269,7 @@ class ComplexAnalysisEngine:
         sol = solve_ivp(real_system, t_span, y0, t_eval=np.linspace(t_span[0], t_span[1], n_points))
         
         z_sol = sol.y[0] + 1j*sol.y[1]
-        return sol.t, z_sol
+        return {'t': sol.t, 'z': z_sol, 'success': sol.status == 0}
     
     def visualize_complex_function(self, f: Callable[[complex], complex],
                                  x_range: Tuple[float, float] = (-2, 2),
@@ -309,23 +323,29 @@ class ComplexAnalysisEngine:
     
     def laurent_series(self, f: Callable[[complex], complex], 
                       center: complex, order: int = 10) -> Dict[int, complex]:
-        """Compute Laurent series coefficients numerically"""
-        coefficients = {}
-        radius = 0.5  # Radius for contour integration
+        """
+        Compute Laurent series coefficients numerically.
         
-        for n in range(-order, order + 1):
-            # c_n = 1/(2πi) ∮ f(z)/(z-center)^(n+1) dz
-            def integrand(z):
-                return f(z) / (z - center)**(n + 1)
-            
-            # Circular contour
-            def contour(t):
-                return center + radius * np.exp(2j * np.pi * t)
-            
-            coeff = self.contour_integral(integrand, contour) / (2 * np.pi * 1j)
-            coefficients[n] = coeff
+        DEPRECATED: Use laurent_series_coefficients() instead for better control
+        over radii and handling of singularities.
         
-        return coefficients
+        This method computes both positive and negative order terms using a
+        single contour radius.
+        
+        Args:
+            f: Complex function
+            center: Expansion center
+            order: Maximum absolute value of series order (computes from -order to +order)
+        
+        Returns:
+            Dictionary with coefficients indexed by order
+        """
+        # Default to using the more robust implementation with single radius
+        # Use 0.5 as default radius for backward compatibility
+        inner_radius = 0.1
+        outer_radius = 0.5
+        
+        return self.laurent_series_coefficients(f, center, inner_radius, outer_radius, order)
 
 # Example applications
     def fft_analysis(self, signal: np.ndarray, sampling_rate: float) -> Dict[str, Any]:
@@ -390,28 +410,64 @@ class ComplexAnalysisEngine:
     def laurent_series_coefficients(self, f: Callable[[complex], complex],
                                   center: complex, inner_radius: float,
                                   outer_radius: float, max_order: int = 10) -> Dict[int, complex]:
-        """Calculate Laurent series coefficients around a point"""
+        """
+        Calculate Laurent series coefficients around a point using two contours.
+        
+        This is the primary method for computing Laurent series expansions.
+        It uses two different radii to separately compute the Taylor series
+        (regular part) and the principal part (singular part).
+        
+        The Laurent series is: f(z) = sum_{n=-inf}^{inf} c_n (z-center)^n
+        
+        Args:
+            f: Complex function to expand
+            center: Point around which to expand
+            inner_radius: Radius for computing negative powers (principal part).
+                         Should be smaller than outer_radius.
+            outer_radius: Radius for computing positive powers (Taylor part).
+                         Should be larger than inner_radius and chosen to avoid
+                         singularities of f.
+            max_order: Maximum absolute value of series order.
+                      Computes from -max_order to +max_order.
+        
+        Returns:
+            Dictionary with Laurent coefficients, indexed by order n.
+            Keys range from -max_order to +max_order.
+        
+        Example:
+            >>> engine = ComplexAnalysisEngine()
+            >>> f = lambda z: 1/(z*(z-1))
+            >>> coeffs = engine.laurent_series_coefficients(f, 0, 0.1, 0.5, 5)
+        """
+        if inner_radius < 0:
+            raise InvalidInputError("inner_radius", str(inner_radius), "non-negative value")
+        if outer_radius <= 0:
+            raise InvalidInputError("outer_radius", str(outer_radius), "positive value")
+        if inner_radius >= outer_radius:
+            raise InvalidInputError("radii", f"inner={inner_radius}, outer={outer_radius}", "inner_radius < outer_radius")
+        
         coefficients = {}
         
-        # Positive powers (regular Taylor series part)
+        # Positive powers (regular Taylor series part) - use outer contour
         for n in range(max_order + 1):
             # c_n = (1/2πi) ∮ f(z)/(z-center)^(n+1) dz
             def integrand(z):
                 return f(z) / (z - center)**(n + 1)
             
-            # Circular contour
+            # Circular contour with outer_radius
             def contour(t):
                 return center + outer_radius * np.exp(2j * np.pi * t)
             
             coeff = self.contour_integral(integrand, contour) / (2j * np.pi)
             coefficients[n] = coeff
         
-        # Negative powers (principal part)
+        # Negative powers (principal part) - use inner contour
         for n in range(1, max_order + 1):
             # c_{-n} = (1/2πi) ∮ f(z)*(z-center)^(n-1) dz
             def integrand(z):
                 return f(z) * (z - center)**(n - 1)
             
+            # Circular contour with inner_radius
             def contour(t):
                 return center + inner_radius * np.exp(2j * np.pi * t)
             

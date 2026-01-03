@@ -9,6 +9,15 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from utils.ui_helpers import run_task, copy_button
+from utils.exceptions import InvalidInputError, NumericalInstabilityError
+
+# Example engineering analyses
+ENGINEERING_EXAMPLES = {
+    "Cantilever Beam": {"type": "FEA", "geometry": "Cantilever Beam", "material": "Steel"},
+    "Pipe Flow": {"type": "CFD", "geometry": "Pipe", "fluid": "Water"},
+    "Waveguide": {"type": "EM", "geometry": "Rectangular Waveguide"},
+    "Crystal Structure": {"type": "Material", "system": "FCC"},
+}
 
 try:
     from core.engineering.fea_engine import FEAEngine, Material as FEAMaterial, ElementType
@@ -31,8 +40,31 @@ def render_engineering_panel():
     """, unsafe_allow_html=True)
     
     if not ENGINES_LOADED:
-        st.error("Engineering modules not properly loaded. Please check installation.")
+        st.error("Engineering modules not properly loaded.")
+        st.info("Hint: Check that all engineering engine files are in core/engineering/ directory")
         return
+    
+    # Example selector
+    st.markdown("**Load Example:**")
+    col_ex1, col_ex2 = st.columns([3, 1])
+    with col_ex1:
+        example_choice = st.selectbox(
+            "Choose an example:",
+            [""] + list(ENGINEERING_EXAMPLES.keys()),
+            help="Select an example engineering analysis"
+        )
+    with col_ex2:
+        if st.button("Load Example", disabled=not example_choice):
+            if example_choice in ENGINEERING_EXAMPLES:
+                st.session_state.engineering_example = ENGINEERING_EXAMPLES[example_choice]
+                st.rerun()
+    
+    st.markdown("---")
+    
+    # Determine active tab from example
+    example_data = st.session_state.get("engineering_example", {})
+    example_type = example_data.get("type", "FEA")
+    tab_index = {"FEA": 0, "CFD": 1, "EM": 2, "Material": 3}.get(example_type, 0)
     
     # Engineering simulation tabs
     tabs = st.tabs([
@@ -70,15 +102,20 @@ def render_fea_tab():
         )
         
         # Geometry selection
+        example_data = st.session_state.get("engineering_example", {})
+        default_geometry = example_data.get("geometry", "Cantilever Beam") if example_data.get("type") == "FEA" else "Cantilever Beam"
         geometry = st.selectbox(
             "Example Geometry",
-            ["Cantilever Beam", "Simply Supported Beam", "Plate with Hole", "Custom"]
+            ["Cantilever Beam", "Simply Supported Beam", "Plate with Hole", "Custom"],
+            index=["Cantilever Beam", "Simply Supported Beam", "Plate with Hole", "Custom"].index(default_geometry) if default_geometry in ["Cantilever Beam", "Simply Supported Beam", "Plate with Hole", "Custom"] else 0
         )
         
         # Material selection
+        default_material = example_data.get("material", "Steel") if example_data.get("type") == "FEA" else "Steel"
         material = st.selectbox(
             "Material",
-            ["Steel", "Aluminum", "Concrete", "Titanium", "Copper", "Inconel", "Carbon Fiber", "Custom"]
+            ["Steel", "Aluminum", "Concrete", "Titanium", "Copper", "Inconel", "Carbon Fiber", "Custom"],
+            index=["Steel", "Aluminum", "Concrete", "Titanium", "Copper", "Inconel", "Carbon Fiber", "Custom"].index(default_material) if default_material in ["Steel", "Aluminum", "Concrete", "Titanium", "Copper", "Inconel", "Carbon Fiber", "Custom"] else 0
         )
         
         # Mesh parameters
@@ -147,7 +184,7 @@ def render_fea_tab():
                     fea.solve_static()
                     
                     # Display results
-                    st.success("✅ Analysis completed successfully!")
+                    st.success("Analysis completed successfully!")
                     
                     # Maximum displacement
                     max_disp = np.max(np.abs(fea.displacement))
@@ -243,7 +280,7 @@ def render_cfd_tab():
                     # Solve
                     cfd.solve_SIMPLE(n_iterations=max_iterations)
                     
-                    st.success("✅ CFD simulation completed!")
+                    st.success("CFD simulation completed!")
                     
                     # Calculate Reynolds number
                     Re = cfd.calculate_reynolds_number(cavity_size, lid_velocity)
@@ -318,7 +355,7 @@ def render_electromagnetics_tab():
                         # Calculate modes
                         results = em.waveguide_modes(a, b, mode_m, mode_n)
                         
-                        st.success("✅ Waveguide analysis complete!")
+                        st.success("Waveguide analysis complete!")
                         
                         # Display results
                         col_a, col_b = st.columns(2)
@@ -520,9 +557,9 @@ def render_material_science_tab():
                 st.metric("Years at 1 Hz", f"{life / (365 * 24 * 3600):.2f}")
                 
                 if life > 1e6:
-                    st.success("✅ Infinite life expected")
+                    st.success("Infinite life expected")
                 else:
-                    st.warning("⚠️ Finite life - consider redesign")
+                    st.warning("Finite life - consider redesign")
     
     with analysis_tabs[4]:
         st.markdown("### Material Selection Tool")

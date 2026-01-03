@@ -4,6 +4,9 @@ from typing import Dict, List, Tuple, Optional, Union, Any
 from dataclasses import dataclass
 from enum import Enum
 import numpy as np
+from utils.exceptions import (
+    InvalidInputError, ConvergenceError, ConfigurationError, NumericalInstabilityError
+)
 
 class IntegrationMethod(Enum):
     """Available integration methods"""

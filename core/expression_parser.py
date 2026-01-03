@@ -3,6 +3,7 @@ from sympy.parsing.sympy_parser import parse_expr
 from sympy.parsing.sympy_parser import standard_transformations, implicit_multiplication_application
 import re
 from typing import Any, Dict, List, Union
+from utils.exceptions import ExpressionParseError
 
 class ExpressionParser:
     """
@@ -13,6 +14,24 @@ class ExpressionParser:
         self.transformations = (standard_transformations + 
                               (implicit_multiplication_application,))
         self.local_dict = self._setup_symbols()
+
+        # Maximum expression length to reduce injection risk
+        self.max_expression_length = 500
+
+    def _validate_expression(self, expression: str) -> None:
+        """Basic validation to reduce injection surface before parsing."""
+        if len(expression) > self.max_expression_length:
+            raise ExpressionParseError(expression, "Expression exceeds maximum length of 500 characters")
+
+        # Block common code-injection markers and dangerous tokens
+        blacklist = [
+            "__", "import", "sys.", "os.", "subprocess", "eval(", "exec(",
+            "open(", "globals()", "locals()", "getattr", "setattr", "lambda"
+        ]
+        lowered = expression.lower()
+        for token in blacklist:
+            if token in lowered:
+                raise ExpressionParseError(expression, f"Disallowed pattern '{token}' detected in expression")
     
     def _setup_symbols(self) -> Dict[str, Any]:
         """Setup common mathematical symbols and functions"""
@@ -32,6 +51,7 @@ class ExpressionParser:
             'y': Symbol('y'),
             'z': Symbol('z'),
             't': Symbol('t'),
+            's': Symbol('s'),
             'n': Symbol('n'),
             'u': Symbol('u'),
             'v': Symbol('v'),
@@ -93,9 +113,11 @@ class ExpressionParser:
             SymPy expression object
             
         Raises:
-            ValueError: If expression cannot be parsed
+            ExpressionParseError: If expression cannot be parsed
         """
         try:
+            self._validate_expression(expression)
+
             # Clean the expression
             expression = self._preprocess_expression(expression)
             
@@ -109,8 +131,10 @@ class ExpressionParser:
             
             return expr
             
+        except ExpressionParseError:
+            raise
         except Exception as e:
-            raise ValueError(f"Failed to parse expression '{expression}': {str(e)}")
+            raise ExpressionParseError(expression, str(e))
     
     def _preprocess_expression(self, expression: str) -> str:
         """
@@ -119,24 +143,22 @@ class ExpressionParser:
         # Remove whitespace
         expression = expression.replace(' ', '')
 
-        # Normalize scientific notation: 1e-3 -> 1*10^-3 so SymPy parses it correctly
-        expression = re.sub(r'(?<!\w)(\d+(?:\.\d+)?)[eE]([+-]?\d+)', r"\1*10^\2", expression)
+        # Normalize scientific notation: 1e-3 -> 1*10**(-3) so SymPy parses it correctly
+        expression = re.sub(r'(?<!\w)(\d*\.?\d+)[eE]([+-]?\d+)', r"\1*10**(\2)", expression)
         
         # Define known functions to avoid breaking them
         functions = ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh',
                 'exp', 'log', 'log10', 'ln', 'sqrt', 'abs', 'factorial', 'gamma', 'floor', 'ceil',
                 'diff', 'integrate', 'limit']
         
-        # Handle power notation first
-        expression = expression.replace('^', '**')
         expression = expression.replace('ln(', 'log(')
         
         # Handle implicit multiplication carefully
         # Numbers followed by variables: 2x -> 2*x (but not in scientific notation)
         expression = re.sub(r'(\d)([a-zA-Z])', r'\1*\2', expression)
         
-        # Note: We intentionally do NOT split variable names with subscripts (x2, y1, etc.)
-        # as these are common mathematical notation and should remain as single symbols
+        # Note: We intentionally keep variable names with numeric suffixes (x2, y1) intact
+        # so they are treated as distinct symbols rather than implicit multiplication.
         
         # Closing parenthesis followed by variables/numbers/opening parenthesis: (x)y -> (x)*y
         expression = re.sub(r'(\))([a-zA-Z\d\(])', r'\1*\2', expression)
@@ -157,6 +179,9 @@ class ExpressionParser:
         # Restore function calls
         for placeholder, func in protected_funcs.items():
             expression = expression.replace(f"{placeholder}(", f"{func}(")
+
+        # Convert power notation after other preprocessing to avoid touching protected names
+        expression = expression.replace('^', '**')
         
         return expression
     
@@ -199,7 +224,7 @@ class ExpressionParser:
             'functions': [str(func) for func in expr.atoms(sp.Function)],
             'constants': [str(const) for const in expr.atoms(sp.Number)],
             'complexity': len(expr.args),
-            'is_polynomial': expr.is_polynomial(),
+            'is_polynomial': expr.is_polynomial(*expr.free_symbols) if expr.free_symbols else False,
             'is_rational': expr.is_rational_function(),
         }
 

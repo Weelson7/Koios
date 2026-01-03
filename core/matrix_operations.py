@@ -4,6 +4,10 @@ from sympy import Matrix as SpMatrix
 from typing import List, Union, Dict, Any, Optional
 import pandas as pd
 from functools import lru_cache
+from utils.exceptions import (
+    SingularMatrixError, InvalidDimensionError, InvalidInputError,
+    NumericalInstabilityError
+)
 
 class MatrixOperations:
     """
@@ -63,7 +67,7 @@ class MatrixOperations:
         
         try:
             if matrix1.shape != matrix2.shape:
-                raise ValueError("Matrices must have the same shape for addition")
+                raise InvalidDimensionError("addition", matrix1.shape, matrix2.shape)
             
             result_matrix = matrix1 + matrix2
             
@@ -86,6 +90,11 @@ class MatrixOperations:
         }
         
         try:
+            if isinstance(matrix1, np.ndarray) != isinstance(matrix2, np.ndarray):
+                raise InvalidInputError("matrix types", 
+                    f"matrix1={type(matrix1).__name__}, matrix2={type(matrix2).__name__}",
+                    "both must be NumPy arrays or both must be SymPy matrices")
+            
             if isinstance(matrix1, np.ndarray):
                 result_matrix = np.dot(matrix1, matrix2)
             else:
@@ -111,7 +120,7 @@ class MatrixOperations:
         
         try:
             if matrix.shape[0] != matrix.shape[1]:
-                raise ValueError("Matrix must be square to calculate determinant")
+                raise InvalidDimensionError("determinant", matrix.shape)
             
             if isinstance(matrix, np.ndarray):
                 det = np.linalg.det(matrix)
@@ -138,18 +147,18 @@ class MatrixOperations:
         
         try:
             if matrix.shape[0] != matrix.shape[1]:
-                raise ValueError("Matrix must be square to calculate inverse")
+                raise InvalidDimensionError("inverse", matrix.shape)
             
             if isinstance(matrix, np.ndarray):
                 det = np.linalg.det(matrix)
-                if abs(det) < 1e-10:
-                    raise ValueError("Matrix is singular (determinant is zero)")
+                if abs(det) < np.finfo(float).eps * matrix.shape[0]:
+                    raise SingularMatrixError("inverse")
                 inverse_matrix = np.linalg.inv(matrix)
             else:
                 try:
                     inverse_matrix = matrix.inv()
                 except:
-                    raise ValueError("Matrix is singular (determinant is zero)")
+                    raise SingularMatrixError("inverse")
             
             result['success'] = True
             result['inverse_matrix'] = inverse_matrix
@@ -172,7 +181,7 @@ class MatrixOperations:
         
         try:
             if matrix.shape[0] != matrix.shape[1]:
-                raise ValueError("Matrix must be square to calculate eigenvalues")
+                raise InvalidDimensionError("eigenvalues", matrix.shape)
             
             if isinstance(matrix, np.ndarray):
                 eigenvalues, eigenvectors = np.linalg.eig(matrix)
@@ -286,10 +295,11 @@ class MatrixOperations:
                 elif norm_type == 'inf':
                     norm = np.linalg.norm(matrix, np.inf)
                 else:
-                    raise ValueError(f"Unsupported norm type: {norm_type}")
+                    raise InvalidInputError("norm type", norm_type, "frobenius, 1, 2, or inf")
             else:
                 # SymPy doesn't have built-in matrix norms, calculate manually
-                norm = sp.sqrt(sum(element**2 for element in matrix))
+                # Flatten the matrix to iterate over all elements
+                norm = sp.sqrt(sum(element**2 for row in matrix.tolist() for element in row))
             
             result['success'] = True
             result['norm'] = float(norm) if isinstance(norm, (np.number, sp.Basic)) else norm
@@ -305,15 +315,15 @@ class MatrixOperations:
         """
         # Validate input
         if not matrix_data or len(matrix_data) == 0:
-            raise ValueError("Matrix cannot be empty")
+            raise InvalidInputError("matrix data", "empty", "non-empty 2D list")
             
         # Check for non-numeric values
         for row in matrix_data:
             if not row:
-                raise ValueError("Matrix rows cannot be empty")
+                raise InvalidInputError("matrix row", "empty", "row with at least one element")
             for val in row:
                 if isinstance(val, str):
-                    raise ValueError(f"Matrix contains non-numeric value: {val}")
+                    raise InvalidInputError("matrix element", str(val), "numeric value")
                     
         try:
             matrix_result = self.create_matrix(matrix_data, symbolic=False)
@@ -322,12 +332,12 @@ class MatrixOperations:
                 if det_result['success']:
                     return det_result['determinant']
             if matrix_result.get('error'):
-                raise ValueError(matrix_result['error'])
+                raise InvalidInputError("matrix creation", matrix_result['error'], "valid numeric matrix")
             return None
-        except ValueError:
+        except InvalidInputError:
             raise
         except Exception as e:
-            raise ValueError(f"Error calculating determinant: {str(e)}")
+            raise NumericalInstabilityError("determinant calculation", str(e))
     
     def transpose(self, matrix_data: List[List[Union[int, float]]]) -> Union[List[List[float]], None]:
         """
@@ -339,9 +349,13 @@ class MatrixOperations:
                 transpose_result = self.matrix_transpose(matrix_result['matrix'])
                 if transpose_result['success']:
                     return transpose_result['transpose_matrix'].tolist()
+            if matrix_result.get('error'):
+                raise InvalidInputError("matrix creation", matrix_result['error'], "valid numeric matrix")
             return None
-        except Exception:
-            return None
+        except InvalidInputError:
+            raise
+        except Exception as e:
+            raise NumericalInstabilityError("transpose calculation", str(e))
     
     def rank(self, matrix_data: List[List[Union[int, float]]]) -> Union[int, None]:
         """
@@ -353,9 +367,13 @@ class MatrixOperations:
                 rank_result = self.matrix_rank(matrix_result['matrix'])
                 if rank_result['success']:
                     return rank_result['rank']
+            if matrix_result.get('error'):
+                raise InvalidInputError("matrix creation", matrix_result['error'], "valid numeric matrix")
             return None
-        except Exception:
-            return None
+        except InvalidInputError:
+            raise
+        except Exception as e:
+            raise NumericalInstabilityError("rank calculation", str(e))
     
     def generate_random_matrix(self, rows: int, cols: int, min_val: float = -10, max_val: float = 10) -> Dict[str, Any]:
         """
@@ -378,7 +396,9 @@ class MatrixOperations:
         
         try:
             if rows <= 0 or cols <= 0:
-                raise ValueError("Matrix dimensions must be positive")
+                raise InvalidInputError("matrix dimensions", f"({rows}x{cols})", "positive dimensions")
+            if min_val >= max_val:
+                raise InvalidInputError("value range", f"min={min_val}, max={max_val}", "min_val < max_val")
                 
             # Generate random matrix
             random_matrix = np.random.uniform(min_val, max_val, size=(rows, cols))
@@ -411,7 +431,7 @@ class MatrixOperations:
         
         try:
             if size <= 0:
-                raise ValueError("Matrix size must be positive")
+                raise InvalidInputError("matrix size", str(size), "positive integer")
                 
             if matrix_type == 'identity':
                 matrix = np.eye(size)
@@ -420,7 +440,7 @@ class MatrixOperations:
             elif matrix_type == 'ones':
                 matrix = np.ones((size, size))
             else:
-                raise ValueError(f"Unknown matrix type: {matrix_type}")
+                raise InvalidInputError("matrix type", matrix_type, "identity, zero, or ones")
                 
             result['success'] = True
             result['matrix'] = matrix

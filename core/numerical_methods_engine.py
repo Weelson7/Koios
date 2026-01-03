@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 import warnings
 from functools import lru_cache
+from utils.exceptions import InvalidInputError, ConvergenceError
 
 class SolverType(Enum):
     """Types of numerical solvers"""
@@ -39,6 +40,16 @@ class NumericalMethodsEngine:
         """Newton's method for finding roots of a function"""
         import sympy as sp
         
+        result = {
+            'success': False,
+            'result': None,
+            'iterations': 0,
+            'converged': False,
+            'error': None,
+            'convergence_history': [],
+            'final_residual': None
+        }
+        
         x = sp.Symbol('x')
         try:
             # Parse the function
@@ -61,12 +72,10 @@ class NumericalMethodsEngine:
                     
                     if abs(f_prime_val) < 1e-10:
                         # Derivative too small, cannot continue
-                        return {
-                            'success': False,
-                            'error': f'Derivative too small at x={x_current}, cannot continue Newton\'s method',
-                            'iterations': len(iterations),
-                            'last_x': x_current
-                        }
+                        result['error'] = f'Derivative too small at x={x_current}, cannot continue Newton\'s method'
+                        result['iterations'] = len(iterations)
+                        result['result'] = x_current
+                        return result
                     
                     x_next = x_current - f_val / f_prime_val
                     iterations.append({
@@ -83,31 +92,30 @@ class NumericalMethodsEngine:
                     
                     x_current = x_next
                 except Exception as e:
-                    return {
-                        'success': False,
-                        'error': f'Error during iteration {i}: {str(e)}',
-                        'iterations': len(iterations),
-                        'last_x': x_current
-                    }
+                    result['error'] = f'Error during iteration {i}: {str(e)}'
+                    result['iterations'] = len(iterations)
+                    result['result'] = x_current
+                    return result
             
             # Check if converged based on residual
             final_residual = abs(f_num(x_current))
             if not converged and final_residual < self.tolerance * 10:
                 converged = True
             
-            return {
-                'success': converged,
-                'root': x_current,
-                'iterations': len(iterations),
-                'convergence_history': iterations,
-                'final_residual': final_residual
-            }
+            result['success'] = converged
+            result['result'] = x_current
+            result['converged'] = converged
+            result['iterations'] = len(iterations)
+            result['convergence_history'] = iterations
+            result['final_residual'] = final_residual
+            if not converged:
+                result['error'] = 'Failed to converge within maximum iterations'
+            
+            return result
             
         except Exception as e:
-            return {
-                'success': False,
-                'error': str(e)
-            }
+            result['error'] = str(e)
+            return result
         
     def spectral_poisson_solver_2d(self, f: np.ndarray, 
                                   domain: Tuple[float, float, float, float],
@@ -136,10 +144,18 @@ class NumericalMethodsEngine:
             
             # Solve in Fourier space: -k² û = f̂
             k_squared = kx_grid**2 + ky_grid**2
-            k_squared[0, 0] = 1  # Avoid division by zero
+            
+            # Handle zero frequency mode (k=0)
+            # In Fourier space, the k=0 mode corresponds to the constant/mean term
+            # For periodic boundary conditions without forcing, the Poisson equation
+            # ∇²u = f requires ∫f dx = 0 for a solution to exist (compatibility condition).
+            # Setting k_squared[0, 0] = 1 prevents division by zero, and then u_hat[0, 0] = 0
+            # enforces that the constant mode of the solution is zero, which is appropriate
+            # for homogeneous periodic problems.
+            k_squared[0, 0] = 1  # Prevent division by zero
             
             u_hat = -f_hat / k_squared
-            u_hat[0, 0] = 0  # Set constant mode to zero
+            u_hat[0, 0] = 0  # Enforce zero mean (removes arbitrary constant from solution)
             
             # Transform back
             u = np.real(ifft2(u_hat))
@@ -276,8 +292,8 @@ class NumericalMethodsEngine:
             right = simpson(f, c, b)
             
             if depth <= 0:
-                warnings.warn("Maximum recursion depth reached")
-                return left + right
+                raise ValueError("Maximum recursion depth reached in adaptive integration. "
+                               "Increase max_depth or relax tolerance.")
             
             if abs(left + right - whole) < 15 * tol:
                 return left + right + (left + right - whole) / 15
@@ -319,11 +335,15 @@ class NumericalMethodsEngine:
             
         elif method == 'quasi':
             # Quasi-random (Sobol sequence)
-            from scipy.stats import qmc
-            sampler = qmc.Sobol(d=dim, scramble=True)
-            samples = sampler.random(n_samples)
-            for i, (a, b) in enumerate(domain):
-                samples[:, i] = a + (b - a) * samples[:, i]
+            try:
+                from scipy.stats import qmc
+                sampler = qmc.Sobol(d=dim, scramble=True)
+                samples = sampler.random(n_samples)
+                for i, (a, b) in enumerate(domain):
+                    samples[:, i] = a + (b - a) * samples[:, i]
+            except ImportError:
+                raise ImportError("Quasi-random sampling requires scipy >= 1.7.0 with qmc module. "
+                                "Please upgrade scipy or use 'uniform' method.")
         
         else:  # importance sampling
             # Use multivariate normal centered in domain
@@ -331,8 +351,17 @@ class NumericalMethodsEngine:
             cov = np.diag([(b - a)**2 / 16 for a, b in domain])
             samples = np.random.multivariate_normal(center, cov, n_samples)
         
-        # Evaluate function
-        values = np.array([f(*sample) for sample in samples])
+        # Evaluate function using vectorized operations when possible
+        try:
+            # Try vectorized evaluation first
+            values = f(samples)
+        except (TypeError, ValueError):
+            # Fallback to element-wise evaluation for non-vectorized functions
+            if n_samples > 10000:
+                # Show progress for large sample counts
+                values = np.array([f(*sample) for sample in samples])
+            else:
+                values = np.array([f(*sample) for sample in samples])
         
         # Compute volume
         volume = np.prod([b - a for a, b in domain])
@@ -371,12 +400,13 @@ class NumericalMethodsEngine:
                 c2 *= c3
                 
                 for k in range(mn, -1, -1):
-                    c[i, k] = (c4 * c[i-1, k] - k * c[i-1, k-1]) / c3
+                    c[i, k] = (c4 * c[i-1, k] - (k * c[i-1, k-1] if k > 0 else 0)) / c3
             
-            # When i == 0, there is no j loop; guard to avoid referencing undefined j
-            if i > 0:
+            # Update previous points coefficients
+            for j in range(i):
+                c3 = x[i] - x[j]
                 for k in range(mn, -1, -1):
-                    c[j, k] = (c2 / c1) * ((k * c[j, k-1] - c5 * c[j, k]) / c3)
+                    c[j, k] = ((k * c[j, k-1] if k > 0 else 0) - c5 * c[j, k]) * (c2 / c1) / c3
             
             c1 = c2
         

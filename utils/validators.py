@@ -45,13 +45,15 @@ class MathValidators:
             result['suggestions'].append("Check that all opening parentheses have matching closing parentheses")
             return result
         
-        # Check for valid characters
+        # Check for valid characters (^ will be auto-converted to ** by expression_parser)
         valid_chars = set('0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+-*/^().,_= ')
         invalid_chars = set(expr_clean) - valid_chars
         if invalid_chars:
             result['error_message'] = f"Invalid characters found: {', '.join(invalid_chars)}"
             result['suggestions'].append("Use only letters, numbers, and mathematical operators")
             return result
+        
+        # Note: ^ is allowed but will be auto-converted to ** for exponentiation
         
         # Check for consecutive operators
         if MathValidators._has_consecutive_operators(expr_clean):
@@ -162,18 +164,27 @@ class MathValidators:
             # Check for square roots of negative numbers
             sqrt_args = MathValidators._find_sqrt_arguments(expr)
             for arg in sqrt_args:
-                # Find where argument is negative
-                negative_regions = sp.solve(arg < 0, var_symbol)
-                if negative_regions:
-                    result['warnings'].append("Square root of negative number in domain")
+                # Check if argument can be negative in domain
+                try:
+                    # Test at endpoints and find critical points
+                    critical_points = sp.solve(arg, var_symbol)
+                    test_points = [x_min, x_max] + [float(pt) for pt in critical_points if x_min <= float(pt) <= x_max]
+                    if any(arg.subs(var_symbol, pt) < 0 for pt in test_points):
+                        result['warnings'].append("Square root may have negative argument in domain")
+                except Exception:
+                    result['warnings'].append("Could not verify square root domain")
             
             # Check for logarithms of non-positive numbers
             log_args = MathValidators._find_log_arguments(expr)
             for arg in log_args:
-                # Find where argument is <= 0
-                invalid_regions = sp.solve(arg <= 0, var_symbol)
-                if invalid_regions:
-                    result['warnings'].append("Logarithm of non-positive number in domain")
+                # Check if argument can be non-positive in domain
+                try:
+                    critical_points = sp.solve(arg, var_symbol)
+                    test_points = [x_min, x_max] + [float(pt) for pt in critical_points if x_min <= float(pt) <= x_max]
+                    if any(arg.subs(var_symbol, pt) <= 0 for pt in test_points):
+                        result['warnings'].append("Logarithm may have non-positive argument in domain")
+                except Exception:
+                    result['warnings'].append("Could not verify logarithm domain")
             
             # Add suggestions based on warnings
             if result['warnings']:
@@ -256,10 +267,28 @@ class MathValidators:
             result['suggestions'].append("Use y' for dy/dx or y'' for d²y/dx²")
             return result
         
-        # Estimate order by counting derivative marks
-        order = ode_expression.count("'")
-        if "diff" in ode_expression or "Derivative" in ode_expression:
-            order = max(order, 1)  # At least first order
+        # Try to determine order using proper parsing
+        order = None
+        try:
+            from core.expression_parser import expression_parser
+            expr = expression_parser.parse(ode_expression)
+            derivatives = list(expr.atoms(sp.Derivative))
+            if derivatives:
+                order = max(deriv.derivative_count for deriv in derivatives)
+            else:
+                # Fallback: count consecutive apostrophes
+                max_consecutive = 0
+                current_consecutive = 0
+                for char in ode_expression:
+                    if char == "'":
+                        current_consecutive += 1
+                        max_consecutive = max(max_consecutive, current_consecutive)
+                    else:
+                        current_consecutive = 0
+                order = max_consecutive if max_consecutive > 0 else 1
+        except Exception:
+            # Fallback to counting apostrophes
+            order = max(ode_expression.count("'"), 1)
         
         result['order'] = order
         
@@ -272,6 +301,10 @@ class MathValidators:
     def validate_physics_parameters(simulation_type: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """
         Validate physics simulation parameters
+        
+        Note: Constraints represent reasonable defaults for typical scenarios.
+        For specialized cases outside these ranges, validation warnings may be
+        issued but simulation will still proceed.
         """
         result = {
             'is_valid': True,
@@ -280,7 +313,7 @@ class MathValidators:
             'suggestions': []
         }
         
-        # Define parameter constraints for each simulation type
+        # Define parameter constraints for each simulation type (reasonable defaults)
         constraints = {
             'projectile_motion': {
                 'v0': {'min': 0, 'max': 1000, 'name': 'Initial velocity'},
@@ -340,18 +373,32 @@ class MathValidators:
     
     @staticmethod
     def _has_consecutive_operators(expression: str) -> bool:
-        """Check for consecutive operators"""
-        operators = '+-*/'
+        """Check for consecutive operators. Allows valid patterns: ** (power), unary signs, and exponentiation patterns."""
         for i in range(len(expression) - 1):
-            if expression[i] in operators and expression[i+1] in operators:
-                # Allow ** for exponentiation
-                if expression[i:i+2] == '**':
-                    continue
-                # Allow +- or -- (negative signs after operators)
-                if expression[i] in '+-*/' and expression[i+1] in '+-':
-                    # This is likely a sign, not an operator
+            current = expression[i]
+            next_char = expression[i+1]
+            
+            # Allow ** for exponentiation
+            if expression[i:i+2] == '**':
+                continue
+            
+            # Allow unary minus/plus after operators (*, /, ^, or opening parenthesis)
+            if current in '*/^(' and next_char in '+-':
+                continue
+            
+            # Allow unary minus/plus after comparison/assignment operators or commas
+            if current in ',=<>!' and next_char in '+-':
+                continue
+            
+            # Check for invalid consecutive binary operators (not unary signs or exponentiation)
+            # Only flag if both are binary operators like +*, +/, -*,  -/, *+, *-, /+, /-
+            binary_operators = '+-*/'
+            if current in binary_operators and next_char in binary_operators:
+                # But allow consecutive +/- (unary sign patterns like -+ or +-)
+                if current in '+-' and next_char in '+-':
                     continue
                 return True
+                
         return False
     
     @staticmethod
@@ -405,9 +452,15 @@ class MathValidators:
     
     @staticmethod
     def _find_denominators(expr) -> List:
-        """Find all denominators in expression"""
+        """Find all denominators in expression using SymPy's denom() function"""
         denominators = []
         
+        # Use SymPy's built-in denom() to get the main denominator
+        main_denom = sp.denom(expr)
+        if main_denom != 1:
+            denominators.append(main_denom)
+        
+        # Also check subexpressions for additional denominators
         for atom in sp.preorder_traversal(expr):
             if atom.is_Pow and atom.exp.is_negative:
                 denominators.append(atom.base)
@@ -416,7 +469,7 @@ class MathValidators:
                     if arg.is_Pow and arg.exp.is_negative:
                         denominators.append(arg.base)
         
-        return denominators
+        return list(set(denominators))  # Remove duplicates
     
     @staticmethod
     def _find_sqrt_arguments(expr) -> List:
@@ -516,7 +569,18 @@ class InputSanitizer:
     
     @staticmethod
     def _add_implicit_multiplication(expr: str) -> str:
-        """Add implicit multiplication operators"""
+        """Add implicit multiplication operators
+        
+        Note: This function treats patterns like '2x' as '2*x' (multiplication).
+        If you have variables with numbers in their names (e.g., 'x2' as a single variable),
+        use explicit naming or underscores (e.g., 'x_2') to avoid ambiguity.
+        
+        Supported patterns:
+        - number + letter: '2x' -> '2*x'
+        - letter + number: 'x2' -> 'x*2' (treats as multiplication)
+        - ')' + alphanumeric or '(': '(x)(y)' -> '(x)*(y)'
+        - alphanumeric + '(': 'x(y)' -> 'x*(y)'
+        """
         result = ""
         for i, char in enumerate(expr):
             result += char

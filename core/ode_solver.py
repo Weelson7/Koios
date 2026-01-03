@@ -3,6 +3,7 @@ import sympy as sp
 from scipy.integrate import odeint, solve_ivp
 from typing import Dict, Any, List, Callable, Optional, Union
 from core.expression_parser import expression_parser
+from utils.exceptions import ExpressionParseError, ConfigurationError, InvalidInputError
 
 class ODESolver:
     """
@@ -24,6 +25,9 @@ class ODESolver:
             
         Returns:
             Dictionary with parsed ODE information
+            
+        Raises:
+            ValueError: If variable names conflict or are invalid
         """
         result = {
             'success': False,
@@ -33,6 +37,26 @@ class ODESolver:
         }
         
         try:
+            # Validate variable names - ensure they don't conflict
+            if dependent_var == independent_var:
+                raise InvalidInputError(
+                    "ODE variables",
+                    f"dependent='{dependent_var}', independent='{independent_var}'",
+                    "different variable names"
+                )
+            if not dependent_var.isidentifier():
+                raise InvalidInputError(
+                    "dependent variable",
+                    f"'{dependent_var}'",
+                    "valid Python identifier"
+                )
+            if not independent_var.isidentifier():
+                raise InvalidInputError(
+                    "independent variable",
+                    f"'{independent_var}'",
+                    "valid Python identifier"
+                )
+            
             # Define symbols
             x = sp.Symbol(independent_var)
             y = sp.Function(dependent_var)
@@ -41,15 +65,21 @@ class ODESolver:
             # Use regex to avoid double replacement issues
             import re
             
-            # Replace higher-order derivatives first
-            ode_string = re.sub(r"\by''\b", f"Derivative(y({independent_var}), {independent_var}, 2)", ode_string)
-            ode_string = re.sub(r"\by'\b", f"Derivative(y({independent_var}), {independent_var})", ode_string)
-            # Replace standalone y with function notation (but not y inside Derivative)
-            ode_string = re.sub(r"\by\b(?!\s*\()", f"{dependent_var}({independent_var})", ode_string)
+            # Check if string already contains "Derivative" to avoid double replacement
+            if "Derivative" not in ode_string:
+                # Replace higher-order derivatives first (more specific patterns first)
+                ode_string = re.sub(r"\by''\b", f"Derivative({dependent_var}({independent_var}), {independent_var}, 2)", ode_string)
+                ode_string = re.sub(r"\by'\b", f"Derivative({dependent_var}({independent_var}), {independent_var})", ode_string)
+            # Replace standalone y with function notation (but not y inside Derivative or other functions)
+            ode_string = re.sub(r"\by\b(?!\s*\(|\s*,|\s*\))", f"{dependent_var}({independent_var})", ode_string)
             
             # Parse the ODE using SymPy directly
             if '=' in ode_string:
-                left, right = ode_string.split('=')
+                parts = ode_string.split('=')
+                if len(parts) != 2:
+                    raise InvalidInputError("ode_string", ode_string, 
+                        "Single equation with format 'expr1=expr2' (must contain exactly one '=' sign)")
+                left, right = parts
                 # Use SymPy's sympify for parsing
                 left_expr = sp.sympify(left, locals={'x': x, 'y': y})
                 right_expr = sp.sympify(right, locals={'x': x, 'y': y})
@@ -61,23 +91,8 @@ class ODESolver:
             order = 1
             derivatives = list(ode_expr.atoms(sp.Derivative))
             if derivatives:
-                x_symbol = sp.Symbol(independent_var)
-
-                def _derivative_order(deriv: sp.Derivative) -> int:
-                    # SymPy stores variables as a tuple such as (x, x) or ((x, 2))
-                    variables = getattr(deriv, 'variable_count', deriv.variables)
-                    total = 0
-                    for v in variables:
-                        if isinstance(v, tuple):
-                            sym, count = v
-                            if sym == x_symbol:
-                                total += int(count)
-                        else:
-                            if v == x_symbol:
-                                total += 1
-                    return total or 1
-
-                orders = [_derivative_order(d) for d in derivatives]
+                # Use SymPy's built-in derivative_count property
+                orders = [deriv.derivative_count for deriv in derivatives]
                 order = max(orders) if orders else 1
             
             result['success'] = True
@@ -215,6 +230,12 @@ class ODESolver:
                          num_points: int = 100) -> Dict[str, Any]:
         """
         Wrapper for scipy.integrate.solve_ivp for advanced ODE solving
+        
+        Returns:
+            Dictionary with:
+            - x_values: Time points (1D array)
+            - y_values: Solution values (2D array for multi-dimensional, 1D for single)
+            Note: For consistency, single-variable results are stored as 1D arrays
         """
         result = {
             'success': False,
@@ -225,8 +246,9 @@ class ODESolver:
         }
         
         try:
-            # Ensure y0 is array-like
-            if isinstance(y0, (int, float)):
+            # Ensure y0 is array-like and track original dimensionality
+            is_scalar = isinstance(y0, (int, float))
+            if is_scalar:
                 y0 = [y0]
             
             # Create evaluation points
@@ -238,7 +260,11 @@ class ODESolver:
             if sol.success:
                 result['success'] = True
                 result['x_values'] = sol.t.tolist()
-                result['y_values'] = sol.y.tolist()
+                # For consistency: return 1D array for single variable, 2D for multiple
+                if is_scalar:
+                    result['y_values'] = sol.y[0].tolist()
+                else:
+                    result['y_values'] = sol.y.tolist()
             else:
                 result['error'] = "scipy solve_ivp failed"
             
@@ -282,6 +308,19 @@ class ODESolver:
                          method: str = 'RK45') -> Dict[str, Any]:
         """
         Solve system of ODEs
+        
+        Args:
+            expressions: List of ODE expressions for each variable
+            initial_conditions: Initial values for each variable
+            x_span: Tuple (x_start, x_end) for integration domain
+            variables: List of variable names corresponding to expressions
+            method: Integration method (e.g., 'RK45')
+            
+        Returns:
+            Dictionary with solution arrays
+            
+        Raises:
+            ValueError: If lengths don't match or inputs are invalid
         """
         result = {
             'success': False,
@@ -292,21 +331,50 @@ class ODESolver:
         }
         
         try:
-            # Create system function
+            # Validate input consistency
+            if len(expressions) != len(variables):
+                raise ConfigurationError(
+                    "ODE system",
+                    f"{len(expressions)} expressions vs {len(variables)} variables",
+                    "expressions count must equal variables count"
+                )
+            if len(initial_conditions) != len(variables):
+                raise ConfigurationError(
+                    "ODE system",
+                    f"{len(initial_conditions)} initial conditions vs {len(variables)} variables",
+                    "initial conditions count must equal variables count"
+                )
+            if len(expressions) == 0:
+                raise ConfigurationError(
+                    "ODE system",
+                    "empty system",
+                    "at least one equation required"
+                )
+            
+            # Parse all expressions once before creating system function (optimization)
+            parsed_exprs = []
+            for expr_str in expressions:
+                try:
+                    expr = self.parser.parse(expr_str)
+                    parsed_exprs.append(expr)
+                except Exception as e:
+                    raise ExpressionParseError(expr_str, str(e))
+            
+            # Create system function using pre-parsed expressions
             def system_func(x, y):
                 dydt = []
-                for i, expr_str in enumerate(expressions):
-                    # Substitute current values
-                    expr = self.parser.parse(expr_str)
-                    
+                for i, expr in enumerate(parsed_exprs):
                     # Create substitution dictionary
                     subs_dict = {'x': x}
                     for j, var in enumerate(variables):
                         subs_dict[var] = y[j]
                     
-                    # Evaluate expression
-                    value = float(expr.subs(subs_dict))
-                    dydt.append(value)
+                    # Evaluate pre-parsed expression
+                    try:
+                        value = float(expr.subs(subs_dict))
+                        dydt.append(value)
+                    except Exception as e:
+                        raise ValueError(f"Failed to evaluate expression {i} at x={x}: {str(e)}")
                 
                 return dydt
             

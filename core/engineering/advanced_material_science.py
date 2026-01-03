@@ -5,6 +5,9 @@ from enum import Enum
 import scipy.optimize as opt
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
+from utils.exceptions import (
+    InvalidInputError, ConfigurationError, DomainError, NumericalInstabilityError
+)
 
 class MaterialType(Enum):
     """Material classification"""
@@ -404,7 +407,11 @@ class AdvancedMaterialScience:
                 hb = conversions[(from_scale.upper(), 'HB')](hardness_value)
                 return conversions[('HB', to_scale.upper())](hb)
             except:
-                raise ValueError(f"Conversion from {from_scale} to {to_scale} not supported")
+                raise InvalidInputError(
+                    "hardness conversion",
+                    f"from {from_scale} to {to_scale}",
+                    "supported conversion path"
+                )
     
     def material_selection_index(self, requirement: str,
                                materials: List[MaterialProperties]) -> List[Tuple[str, float]]:

@@ -8,7 +8,17 @@ import pandas as pd
 from core.expression_parser import expression_parser
 from core.calculation_engine import calculation_engine
 from utils.ui_helpers import run_task, copy_button
+from utils.exceptions import InvalidInputError, ExpressionParseError
 import math
+
+# Example functions for visualization
+VISUALIZATION_EXAMPLES = {
+    "Sine Wave": {"expr": "sin(x)", "type": "2D", "range": (-10, 10)},
+    "Parabola": {"expr": "x**2", "type": "2D", "range": (-5, 5)},
+    "3D Paraboloid": {"expr": "x**2 + y**2", "type": "3D", "range": (-5, 5)},
+    "Saddle Surface": {"expr": "x**2 - y**2", "type": "3D", "range": (-3, 3)},
+    "Spiral": {"expr_x": "t*cos(t)", "expr_y": "t*sin(t)", "type": "Parametric"},
+}
 
 def render_visualization_panel():
     """Render the function visualization panel"""
@@ -19,6 +29,23 @@ def render_visualization_panel():
         <p style='margin: 0.5rem 0 0 0; color: #B0BEC5;'>Interactive 2D/3D function plotting with advanced visualization features</p>
     </div>
     """, unsafe_allow_html=True)
+    
+    # Example selector
+    st.markdown("**Load Example:**")
+    col_ex1, col_ex2 = st.columns([3, 1])
+    with col_ex1:
+        example_choice = st.selectbox(
+            "Choose an example:",
+            [""] + list(VISUALIZATION_EXAMPLES.keys()),
+            help="Select an example function to visualize"
+        )
+    with col_ex2:
+        if st.button("Load Example", disabled=not example_choice):
+            if example_choice in VISUALIZATION_EXAMPLES:
+                st.session_state.viz_example = VISUALIZATION_EXAMPLES[example_choice]
+                st.rerun()
+    
+    st.markdown("---")
     
     # Visualization type selection
     viz_type = st.selectbox(
@@ -66,8 +93,12 @@ def render_2d_function_plot():
         col1, col2, col3 = st.columns([3, 1, 1])
         
         with col1:
+            # Get example data if available
+            example_data = st.session_state.get("viz_example", {})
+            default_value = example_data.get("expr", "") if i == 0 and example_data.get("type") == "2D" else ""
             func = st.text_input(
                 f"Function {i+1}:",
+                value=default_value,
                 placeholder="sin(x) + cos(2*x)",
                 key=f"func_2d_{i}"
             )
@@ -134,8 +165,11 @@ def render_3d_surface_plot():
     col1, col2 = st.columns([2, 1])
     
     with col1:
+        example_data = st.session_state.get("viz_example", {})
+        default_func = example_data.get("expr", "") if example_data.get("type") == "3D" else ""
         function = st.text_input(
             "Function f(x,y):",
+            value=default_func,
             placeholder="sin(sqrt(x**2 + y**2))",
             key="func_3d"
         )
@@ -182,9 +216,12 @@ def render_parametric_plot():
         col1, col2 = st.columns(2)
         
         with col1:
-            x_param = st.text_input("x(t):", placeholder="cos(t)", key="x_param_2d")
+            example_data = st.session_state.get("viz_example", {})
+            default_x = example_data.get("expr_x", "") if example_data.get("type") == "Parametric" else ""
+            x_param = st.text_input("x(t):", value=default_x, placeholder="cos(t)", key="x_param_2d")
         with col2:
-            y_param = st.text_input("y(t):", placeholder="sin(t)", key="y_param_2d")
+            default_y = example_data.get("expr_y", "") if example_data.get("type") == "Parametric" else ""
+            y_param = st.text_input("y(t):", value=default_y, placeholder="sin(t)", key="y_param_2d")
     
     else:  # 3D
         col1, col2, col3 = st.columns(3)
@@ -220,8 +257,11 @@ def render_polar_plot():
     col1, col2 = st.columns([3, 1])
     
     with col1:
+        example_data = st.session_state.get("viz_example", {})
+        default_r = example_data.get("expr", "") if example_data.get("type") == "Polar" else ""
         r_function = st.text_input(
             "r(θ):",
+            value=default_r,
             placeholder="1 + cos(theta)",
             key="r_polar"
         )
@@ -419,7 +459,7 @@ def plot_2d_functions(functions, variable, x_min, x_max, num_points, colors,
         if equal_aspect:
             fig.update_yaxes(scaleanchor="x", scaleratio=1)
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         
     except Exception as e:
         st.error(f"Error creating plot: {str(e)}")
@@ -483,7 +523,7 @@ def plot_3d_surface(function, x_min, x_max, y_min, y_max, resolution, plot_type,
             height=600
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         
         # Function statistics
         col1, col2, col3, col4 = st.columns(4)
@@ -548,7 +588,7 @@ def plot_parametric_2d(x_param, y_param, t_min, t_max, num_points):
             showlegend=True
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         
     except Exception as e:
         st.error(f"Error creating parametric plot: {str(e)}")
@@ -605,7 +645,7 @@ def plot_parametric_3d(x_param, y_param, z_param, t_min, t_max, num_points):
             height=600
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         
     except Exception as e:
         st.error(f"Error creating 3D parametric plot: {str(e)}")
@@ -655,7 +695,7 @@ def plot_polar_function(r_function, theta_var, theta_min, theta_max, num_points)
         # Equal aspect ratio for polar plots
         fig.update_yaxes(scaleanchor="x", scaleratio=1)
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         
         # Also show the actual polar plot
         fig_polar = go.Figure()
@@ -676,7 +716,7 @@ def plot_polar_function(r_function, theta_var, theta_min, theta_max, num_points)
             )
         )
         
-        st.plotly_chart(fig_polar, use_container_width=True)
+        st.plotly_chart(fig_polar, width='stretch')
         
     except Exception as e:
         st.error(f"Error creating polar plot: {str(e)}")
@@ -735,7 +775,7 @@ def plot_vector_field(u_component, v_component, x_min, x_max, y_min, y_max, grid
             showlegend=False
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         
         # Statistics
         col1, col2, col3 = st.columns(3)
@@ -794,7 +834,7 @@ def plot_contour_function(function, x_min, x_max, y_min, y_max, resolution, num_
             yaxis_title="y"
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         
     except Exception as e:
         st.error(f"Error creating contour plot: {str(e)}")
@@ -900,7 +940,7 @@ def create_function_animation(function, time_var, x_min, x_max, t_min, t_max, nu
             }]
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         
         st.info("Use the play button or slider to animate the function over time.")
         
@@ -989,7 +1029,8 @@ def render_function_analysis_viz(function, variable, x_min, x_max):
                 showlegend=True
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         
     except Exception as e:
         st.error(f"Error in function analysis: {str(e)}")
+

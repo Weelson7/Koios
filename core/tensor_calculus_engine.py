@@ -3,6 +3,7 @@ import sympy as sp
 from typing import Dict, List, Tuple, Optional, Union, Any
 from dataclasses import dataclass
 from enum import Enum
+from utils.exceptions import InvalidInputError, InvalidDimensionError, ConfigurationError
 
 class TensorType(Enum):
     """Tensor variance types"""
@@ -81,7 +82,7 @@ class TensorCalculusEngine:
         """Compute tensor product (outer product)"""
         # Check coordinate compatibility
         if tensor1.coordinates != tensor2.coordinates:
-            raise ValueError("Tensors must be defined on same coordinate system")
+            raise InvalidInputError("coordinate systems", f"tensor1={tensor1.coordinates}, tensor2={tensor2.coordinates}", "same coordinate system")
         
         # Compute product
         if tensor1.components.dtype == object or tensor2.components.dtype == object:
@@ -107,11 +108,17 @@ class TensorCalculusEngine:
     
     def contract_indices(self, tensor: Tensor, index1: int, index2: int) -> Tensor:
         """Contract two indices of a tensor"""
-        if index1 >= tensor.rank or index2 >= tensor.rank:
-            raise ValueError("Index out of bounds")
+        if not isinstance(index1, int):
+            raise InvalidInputError("index1", str(index1), "integer")
+        if not isinstance(index2, int):
+            raise InvalidInputError("index2", str(index2), "integer")
+        if index1 < 0 or index1 >= tensor.rank:
+            raise InvalidInputError("index1", str(index1), f"value in range [0, {tensor.rank-1}]")
+        if index2 < 0 or index2 >= tensor.rank:
+            raise InvalidInputError("index2", str(index2), f"value in range [0, {tensor.rank-1}]")
         
         if tensor.indices[index1] == tensor.indices[index2]:
-            raise ValueError("Cannot contract indices of same type")
+            raise InvalidInputError("indices", f"type1={tensor.indices[index1]}, type2={tensor.indices[index2]}", "different index types for contraction")
         
         # Perform contraction
         result = np.trace(tensor.components, axis1=index1, axis2=index2)
@@ -130,10 +137,10 @@ class TensorCalculusEngine:
     def raise_index(self, tensor: Tensor, index: int) -> Tensor:
         """Raise a covariant index using metric tensor"""
         if not self.inverse_metric:
-            raise ValueError("Metric tensor not set")
+            raise ConfigurationError("metric tensor", "not set", "metric tensor must be defined")
         
         if tensor.indices[index] != TensorType.COVARIANT:
-            raise ValueError("Index is already contravariant")
+            raise InvalidInputError("index", str(index), "covariant index to raise")
         
         # Contract with inverse metric
         components = np.tensordot(
@@ -161,10 +168,10 @@ class TensorCalculusEngine:
     def lower_index(self, tensor: Tensor, index: int) -> Tensor:
         """Lower a contravariant index using metric tensor"""
         if not self._metric_tensor:
-            raise ValueError("Metric tensor not set")
+            raise ConfigurationError("metric tensor", "not set", "metric tensor must be defined")
         
         if tensor.indices[index] != TensorType.CONTRAVARIANT:
-            raise ValueError("Index is already covariant")
+            raise InvalidInputError("index", str(index), "contravariant index to lower")
         
         # Contract with metric
         components = np.tensordot(
@@ -192,7 +199,7 @@ class TensorCalculusEngine:
     def christoffel_symbols_first_kind(self) -> np.ndarray:
         """Calculate Christoffel symbols of the first kind Γ_ijk"""
         if not self._metric_tensor:
-            raise ValueError("Metric tensor not set")
+            raise ConfigurationError("metric tensor", "not set", "metric tensor must be defined")
         
         g = self._metric_tensor.components
         coords = self._metric_tensor.coordinates

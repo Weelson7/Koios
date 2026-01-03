@@ -10,6 +10,15 @@ current_dir = Path(__file__).parent
 sys.path.append(str(current_dir.parent / "core"))
 
 from utils.ui_helpers import run_task, copy_button
+from utils.exceptions import InvalidInputError, DomainError
+
+# Example complex numbers for quick loading
+COMPLEX_EXAMPLES = {
+    "Standard Complex": {"z1": (3, 4), "z2": (1, -2)},
+    "Unit Circle": {"z1": (1, 0), "z2": (0, 1)},
+    "Conjugates": {"z1": (2, 3), "z2": (2, -3)},
+    "Large Magnitude": {"z1": (10, 24), "z2": (5, 12)},
+}
 
 try:
     from complex_analysis_engine import ComplexAnalysisEngine
@@ -28,8 +37,28 @@ def render_complex_analysis_panel():
     """, unsafe_allow_html=True)
     
     if ComplexAnalysisEngine is None:
-        st.error("Complex Analysis Engine not available. Please check installation.")
+        st.error("Complex Analysis Engine not available.")
+        st.info("Hint: Check that complex_analysis_engine.py is in the core directory")
         return
+    
+    # Example selector
+    st.markdown("**Load Example:**")
+    col_ex1, col_ex2 = st.columns([3, 1])
+    with col_ex1:
+        example_choice = st.selectbox(
+            "Choose an example:",
+            [""] + list(COMPLEX_EXAMPLES.keys()),
+            help="Select an example to auto-fill complex numbers"
+        )
+    with col_ex2:
+        if st.button("Load Example", disabled=not example_choice):
+            if example_choice in COMPLEX_EXAMPLES:
+                ex = COMPLEX_EXAMPLES[example_choice]
+                st.session_state.complex_z1 = ex["z1"]
+                st.session_state.complex_z2 = ex["z2"]
+                st.rerun()
+    
+    st.markdown("---")
     
     # Initialize engine
     engine = ComplexAnalysisEngine()
@@ -66,18 +95,22 @@ def render_basic_operations(engine: ComplexAnalysisEngine):
     """Render basic complex operations tab"""
     st.subheader("Basic Complex Operations")
     
+    # Get example values from session state
+    example_z1 = st.session_state.get("complex_z1", (0, 0))
+    example_z2 = st.session_state.get("complex_z2", (0, 0))
+    
     col1, col2 = st.columns(2)
     
     with col1:
         st.markdown("**First Complex Number (z1)**")
-        z1_real = st.number_input("Real part", key="z1_real", value=3.0, step=0.1)
-        z1_imag = st.number_input("Imaginary part", key="z1_imag", value=4.0, step=0.1)
+        z1_real = st.number_input("Real part", key="z1_real", value=float(example_z1[0]), step=0.1)
+        z1_imag = st.number_input("Imaginary part", key="z1_imag", value=float(example_z1[1]), step=0.1)
         z1 = complex(z1_real, z1_imag)
     
     with col2:
         st.markdown("**Second Complex Number (z2)**")
-        z2_real = st.number_input("Real part", key="z2_real", value=1.0, step=0.1)
-        z2_imag = st.number_input("Imaginary part", key="z2_imag", value=-2.0, step=0.1)
+        z2_real = st.number_input("Real part", key="z2_real", value=float(example_z2[0]), step=0.1)
+        z2_imag = st.number_input("Imaginary part", key="z2_imag", value=float(example_z2[1]), step=0.1)
         z2 = complex(z2_real, z2_imag)
     
     if st.button("Calculate", key="basic_calc"):
@@ -108,7 +141,7 @@ def render_basic_operations(engine: ComplexAnalysisEngine):
                     results_data.append([op.replace('_', ' ').title(), formatted])
             
             results_df = pd.DataFrame(results_data, columns=["Operation", "Result"])
-            st.dataframe(results_df, use_container_width=True)
+            st.dataframe(results_df, width='stretch')
             
             # Polar and exponential forms
             st.markdown("### Alternative Forms")
@@ -166,7 +199,7 @@ def render_basic_operations(engine: ComplexAnalysisEngine):
                 roots_data.append([f"Root {i+1}", formatted])
             
             roots_df = pd.DataFrame(roots_data, columns=["Root", "Value"])
-            st.dataframe(roots_df, use_container_width=True)
+            st.dataframe(roots_df, width='stretch')
             
         except Exception as e:
             st.error(f"Error finding roots: {str(e)}")
@@ -208,7 +241,7 @@ def render_complex_functions(engine: ComplexAnalysisEngine):
                     func_data.append([func_name, formatted])
             
             func_df = pd.DataFrame(func_data, columns=["Function", "Value"])
-            st.dataframe(func_df, use_container_width=True)
+            st.dataframe(func_df, width='stretch')
             
         except Exception as e:
             st.error(f"Error evaluating functions: {str(e)}")
@@ -444,7 +477,7 @@ def render_laurent_series(engine: ComplexAnalysisEngine):
                     coeff_data.append([n, formatted])
             
             coeff_df = pd.DataFrame(coeff_data, columns=["n", "c_n"])
-            st.dataframe(coeff_df, use_container_width=True)
+            st.dataframe(coeff_df, width='stretch')
             
             # Identify poles
             pole_orders = [n for n in coefficients if n < 0 and abs(coefficients[n]) > 1e-10]

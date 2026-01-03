@@ -3,6 +3,14 @@ import numpy as np
 from typing import Dict, Any, List, Optional, Union
 from functools import lru_cache
 from core.expression_parser import expression_parser
+from utils.exceptions import InvalidDimensionError, UndefinedOperationError, InvalidInputError, DomainError
+
+# Optional fractional calculus support (SymPy versions may omit this module)
+try:
+    from sympy.integrals.fractioncalculus import fractional_derivative, fractional_integrate, CaputoDerivative
+    FRACTIONCALCULUS_AVAILABLE = True
+except ImportError:
+    FRACTIONCALCULUS_AVAILABLE = False
 
 class CalculusEngine:
     """
@@ -20,18 +28,6 @@ class CalculusEngine:
             result = self.compute_derivative(expression, variable, order)
             if result['success']:
                 return result.get('simplified_derivative') or result.get('derivative')
-            return None
-        except Exception:
-            return None
-    
-    def integrate(self, expression: str, variable: str = 'x') -> Any:
-        """
-        Simple integrate method for testing compatibility
-        """
-        try:
-            result = self.compute_integral(expression, variable)
-            if result['success']:
-                return result.get('simplified_integral') or result.get('integral')
             return None
         except Exception:
             return None
@@ -404,7 +400,7 @@ class CalculusEngine:
                 # For poles, solve denominator = 0
                 denominator = sp.denom(expr)
                 poles = sp.solve(denominator, var_symbol) if denominator != 1 else []
-            except:
+            except (ValueError, TypeError) as e:
                 zeros = []
                 poles = []
             
@@ -432,16 +428,27 @@ class CalculusEngine:
             'expression': None,
             'pole': None,
             'residue': None,
+            'pole_order': None,
             'error': None
         }
         
         try:
+            from sympy.calculus.util import pole_order
             expr = self.parser.parse(expression)
             var_symbol = sp.Symbol(variable, complex=True)
             pole_point = self.parser.parse(pole)
-            
-            # Compute residue using limit formula
-            residue = sp.limit((var_symbol - pole_point) * expr, var_symbol, pole_point)
+
+            order = pole_order(expr, var_symbol, pole_point)
+            result['pole_order'] = order
+
+            if order is None or order == 0:
+                residue = sp.Integer(0)
+            elif order == 1:
+                residue = sp.residue(expr, var_symbol, pole_point)
+            else:
+                # General formula for higher-order poles
+                term = sp.diff(((var_symbol - pole_point) ** order) * expr, var_symbol, order - 1)
+                residue = sp.simplify(term.subs(var_symbol, pole_point) / sp.factorial(order - 1))
             
             result['success'] = True
             result['expression'] = expr
@@ -557,7 +564,7 @@ class CalculusEngine:
                 result['gradient_magnitude'] = gradient_magnitude
                 
             else:
-                raise ValueError("Vector field must have 3 components and 3 variables")
+                raise InvalidDimensionError("vector field operation", (len(F),), (3,))
             
         except Exception as e:
             result['error'] = str(e)
@@ -617,10 +624,13 @@ class CalculusEngine:
                 cross_magnitude = sp.sqrt(sum(comp**2 for comp in cross_product))
                 curvature = cross_magnitude / tangent_magnitude**3
                 
-                # Unit normal vector
-                normal = [comp / tangent_magnitude for comp in tangent]
+                # Principal normal vector based on second derivative
+                second_magnitude = sp.sqrt(sum(comp**2 for comp in second_deriv))
+                if second_magnitude.is_zero:
+                    raise UndefinedOperationError("normal vector computation", "second derivative is zero")
+                normal = [comp / second_magnitude for comp in second_deriv]
             else:
-                raise ValueError("Parametric curve must be 2D or 3D")
+                raise InvalidDimensionError("parametric curve", (len(curve),), (2, 3))
             
             # Arc length element
             arc_length_element = sp.sqrt(sum(comp**2 for comp in tangent))
@@ -760,14 +770,24 @@ class CalculusEngine:
         }
         
         try:
+            if not FRACTIONCALCULUS_AVAILABLE:
+                raise ImportError("fractioncalculus module is not available in this SymPy build")
+
             expr = self.parser.parse(expression)
             var = sp.Symbol(variable)
+            order_sym = sp.nsimplify(order)
             
-            # Approximate fractional derivative using gamma functions
-            # This is a simplified mathematical representation
-            gamma_term = sp.gamma(1 - order)
+            frac_derivative = fractional_derivative(expr, (var, order_sym))
+            frac_integral = fractional_integrate(expr, (var, order_sym))
+            try:
+                caputo = CaputoDerivative(expr, (var, order_sym)).doit()
+            except Exception:
+                caputo = None
+            
             result['success'] = True
-            result['fractional_derivative'] = f"D^{order}[{expr}] (approximated)"
+            result['fractional_derivative'] = sp.simplify(frac_derivative)
+            result['fractional_integral'] = sp.simplify(frac_integral)
+            result['caputo_derivative'] = sp.simplify(caputo) if caputo is not None else None
             
         except Exception as e:
             result['error'] = str(e)
@@ -816,6 +836,7 @@ class CalculusEngine:
         """
         result = {
             'success': False,
+            'fourier_series': None,
             'spherical_harmonics': None,
             'legendre_expansion': None,
             'wavelet_transform': None,
@@ -826,11 +847,25 @@ class CalculusEngine:
             expr = self.parser.parse(expression)
             var = sp.Symbol(variable)
             
-            # Spherical harmonics representation
-            # This is a simplified implementation
+            # Fourier series on [-pi, pi] truncated to first few terms for practicality
+            fourier = sp.fourier_series(expr, (var, -sp.pi, sp.pi))
+            result['fourier_series'] = sp.simplify(fourier.truncate(5))
+            
+            # Legendre polynomial projection on [-1, 1] up to degree 3
+            legendre_coeffs = {}
+            for n in range(4):
+                pn = sp.legendre(n, var)
+                coeff = (2 * n + 1) / 2 * sp.integrate(expr * pn, (var, -1, 1))
+                legendre_coeffs[n] = sp.simplify(coeff)
+            result['legendre_expansion'] = sum(legendre_coeffs[n] * sp.legendre(n, var) for n in legendre_coeffs)
+            
+            # Spherical harmonics require angular variables; provide a basic Y_1^0 when theta/phi are available
+            if variable in ('theta', 'phi'):
+                theta = sp.Symbol('theta')
+                phi = sp.Symbol('phi')
+                result['spherical_harmonics'] = sp.Ynm(1, 0, theta, phi)
+            
             result['success'] = True
-            result['expression'] = expr
-            result['harmonic_analysis'] = "Basic harmonic analysis completed"
             
         except Exception as e:
             result['error'] = str(e)
@@ -844,7 +879,8 @@ class CalculusEngine:
     
     def integrate(self, expression: str, variable: str = 'x', lower: Optional[Union[str, float]] = None, upper: Optional[Union[str, float]] = None) -> Dict[str, Any]:
         """Wrapper for compute_integral with support for definite integrals"""
-        return self.compute_integral(expression, variable, lower, upper)
+        definite = (lower is not None and upper is not None)
+        return self.compute_integral(expression, variable, definite, lower, upper)
     
     def series(self, expression: str, variable: str = 'x', point: Union[str, float] = 0, order: int = 5) -> Dict[str, Any]:
         """Wrapper for compute_series for compatibility"""
@@ -864,19 +900,18 @@ class CalculusEngine:
             for var in variables:
                 partial_result = self.compute_partial_derivative(expression, var)
                 if partial_result['success']:
-                    result['partials'][var] = partial_result['derivative']
+                    result['partials'][var] = partial_result['simplified_partial']
                     
             # Second order partials if requested
             if second_order:
                 for var1 in variables:
                     for var2 in variables:
-                        # Get first partial
-                        first_partial = str(result['partials'][var1])
-                        # Compute second partial
-                        second_result = self.compute_partial_derivative(first_partial, var2)
-                        if second_result['success']:
-                            key = f'd2/d{var1}d{var2}'
-                            result['second_partials'][key] = second_result['derivative']
+                        first_partial = result['partials'].get(var1)
+                        if first_partial is None:
+                            continue
+                        var2_symbol = sp.Symbol(var2)
+                        second_partial = sp.diff(first_partial, var2_symbol)
+                        result['second_partials'][f'd2/d{var1}d{var2}'] = sp.simplify(second_partial)
                             
             result['success'] = True
         except Exception as e:
@@ -900,18 +935,22 @@ class CalculusEngine:
             # Get gradient
             grad_result = self.compute_gradient(expression, variables)
             if grad_result['success']:
+                gradient_components = [grad_result['gradient'][var] for var in variables]
                 # Normalize direction vector
                 direction_norm = sum(d**2 for d in direction)**0.5
                 if direction_norm < 1e-10:
-                    raise ValueError("Direction vector cannot be zero")
+                    raise InvalidInputError("direction_vector", str(direction), "non-zero vector")
                 direction_normalized = [d/direction_norm for d in direction]
                 
                 # Evaluate gradient at point
                 subs_dict = {variables[i]: point[i] for i in range(len(variables))}
                 grad_at_point = []
-                for grad_component in grad_result['gradient']:
-                    component_value = grad_component.subs(subs_dict)
-                    grad_at_point.append(float(component_value))
+                for grad_component in gradient_components:
+                    try:
+                        component_value = grad_component.subs(subs_dict).evalf()
+                        grad_at_point.append(float(component_value))
+                    except (ValueError, TypeError, AttributeError):
+                        raise DomainError("gradient", str(point), "valid point in domain")
                 
                 # Compute dot product
                 directional_deriv = sum(grad_at_point[i] * direction_normalized[i] for i in range(len(variables)))
@@ -936,10 +975,10 @@ class CalculusEngine:
         
         try:
             # First integrate with respect to var2
-            inner_result = self.compute_integral(expression, var2, lower2, upper2)
+            inner_result = self.compute_integral(expression, var2, True, lower2, upper2)
             if inner_result['success']:
                 # Then integrate the result with respect to var1
-                outer_result = self.compute_integral(str(inner_result['integral']), var1, lower1, upper1)
+                outer_result = self.compute_integral(str(inner_result['integral']), var1, True, lower1, upper1)
                 if outer_result['success']:
                     result['success'] = True
                     result['integral'] = outer_result['integral']
@@ -961,7 +1000,7 @@ class CalculusEngine:
         
         try:
             # First integrate with respect to var3
-            inner_result = self.compute_integral(expression, var3, lower3, upper3)
+            inner_result = self.compute_integral(expression, var3, True, lower3, upper3)
             if inner_result['success']:
                 # Then compute double integral
                 double_result = self.double_integral(str(inner_result['integral']), var1, lower1, upper1, var2, lower2, upper2)
@@ -1025,7 +1064,19 @@ class CalculusEngine:
         try:
             # Parse objective and constraints
             f = self.parser.parse(objective)
-            g_list = [self.parser.parse(c) for c in constraints]
+            g_list = []
+            for c in constraints:
+                if isinstance(c, str) and '=' in c:
+                    parts = c.split('=', 1)
+                    if len(parts) < 2:
+                        raise InvalidInputError("constraint", c, "format 'expr1=expr2'")
+                    left, right = parts
+                    parsed_constraint = self.parser.parse(f"({left})-({right})")
+                else:
+                    parsed_constraint = self.parser.parse(c)
+                if isinstance(parsed_constraint, sp.Equality):
+                    parsed_constraint = parsed_constraint.lhs - parsed_constraint.rhs
+                g_list.append(parsed_constraint)
             vars_symbols = [self.parser.parse(var) for var in variables]
             
             # Create Lagrangian

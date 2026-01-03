@@ -3,6 +3,7 @@ import numpy as np
 from functools import lru_cache
 from typing import Any, Dict, List, Union, Optional
 from core.expression_parser import expression_parser
+from utils.exceptions import InvalidInputError, DomainError, UndefinedOperationError
 import math
 
 
@@ -20,28 +21,19 @@ class CalculationEngine:
         self.parser = expression_parser
         self.precision = 15  # Default precision for numerical calculations
     
-    def evaluate(self, expression: str, variables: Optional[Dict[str, float]] = None) -> Any:
+    def evaluate(self, expression: str, variables: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
         """
-        Simple evaluate method for testing compatibility
+        Evaluate an expression and return a consistent result dictionary.
         """
-        # Validate input
         if expression is None:
-            raise ValueError("Expression cannot be None")
+            raise InvalidInputError("expression", "None", "non-empty string")
         if expression == "":
-            raise ValueError("Expression cannot be empty")
-            
-        try:
-            result = self.evaluate_expression(expression, variables)
-            if result['success']:
-                # Prefer numeric result when available, even if it is 0.0
-                if result.get('numeric_result') is not None:
-                    return result['numeric_result']
-                return result.get('symbolic_result')
-            if result.get('error'):
-                raise ValueError(result['error'])
-            return None
-        except Exception as e:
-            raise e
+            raise InvalidInputError("expression", "", "non-empty string")
+
+        result = self.evaluate_expression(expression, variables)
+        value = result.get('numeric_result') if result.get('numeric_result') is not None else result.get('symbolic_result')
+        result['value'] = value
+        return result
     
     def evaluate_expression(self, expression: str, variables: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
         """
@@ -103,7 +95,17 @@ class CalculationEngine:
     
     def simplify_expression(self, expression: str) -> Dict[str, Any]:
         """
-        Simplify a mathematical expression
+        Simplify a mathematical expression.
+        
+        Args:
+            expression: String representation of mathematical expression
+            
+        Returns:
+            Dictionary with keys:
+                - success: Boolean indicating operation success
+                - original: Original SymPy expression
+                - simplified: Simplified SymPy expression
+                - error: Error message if operation failed
         """
         result = {
             'success': False,
@@ -127,7 +129,17 @@ class CalculationEngine:
     
     def expand_expression(self, expression: str) -> Dict[str, Any]:
         """
-        Expand a mathematical expression
+        Expand a mathematical expression.
+        
+        Args:
+            expression: String representation of mathematical expression
+            
+        Returns:
+            Dictionary with keys:
+                - success: Boolean indicating operation success
+                - original: Original SymPy expression
+                - expanded: Expanded SymPy expression
+                - error: Error message if operation failed
         """
         result = {
             'success': False,
@@ -151,7 +163,17 @@ class CalculationEngine:
     
     def factor_expression(self, expression: str) -> Dict[str, Any]:
         """
-        Factor a mathematical expression
+        Factor a mathematical expression.
+        
+        Args:
+            expression: String representation of mathematical expression
+            
+        Returns:
+            Dictionary with keys:
+                - success: Boolean indicating operation success
+                - original: Original SymPy expression
+                - factored: Factored SymPy expression
+                - error: Error message if operation failed
         """
         result = {
             'success': False,
@@ -175,7 +197,18 @@ class CalculationEngine:
     
     def solve_equation(self, equation: str, variable: str = 'x') -> Dict[str, Any]:
         """
-        Solve an equation for a given variable
+        Solve an equation for a given variable.
+        
+        Args:
+            equation: Equation string (with or without = sign)
+            variable: Variable to solve for (default: 'x')
+            
+        Returns:
+            Dictionary with keys:
+                - success: Boolean indicating operation success
+                - equation: Parsed equation expression
+                - solutions: List of solution strings
+                - error: Error message if operation failed
         """
         result = {
             'success': False,
@@ -206,7 +239,20 @@ class CalculationEngine:
     
     def evaluate_at_points(self, expression: str, variable: str, points: List[float]) -> Dict[str, Any]:
         """
-        Evaluate expression at multiple points
+        Evaluate expression at multiple points.
+        
+        Args:
+            expression: String representation of mathematical expression
+            variable: Variable name to substitute
+            points: List of numeric points to evaluate at
+            
+        Returns:
+            Dictionary with keys:
+                - success: Boolean indicating operation success
+                - expression: Parsed SymPy expression
+                - points: Input points list
+                - values: Evaluated values at each point (None if undefined)
+                - error: Error message if operation failed
         """
         result = {
             'success': False,
@@ -225,7 +271,7 @@ class CalculationEngine:
                 try:
                     value = float(expr.subs(var_symbol, point).evalf(self.precision))
                     values.append(value)
-                except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
+                except (ValueError, TypeError, ZeroDivisionError, OverflowError, AttributeError) as e:
                     # For undefined points (division by zero, domain errors, etc.)
                     values.append(None)
             
@@ -241,7 +287,19 @@ class CalculationEngine:
     
     def get_function_domain(self, expression: str, variable: str = 'x') -> Dict[str, Any]:
         """
-        Analyze the domain of a function
+        Analyze the domain of a function.
+        
+        Args:
+            expression: String representation of mathematical expression
+            variable: Variable to analyze domain for (default: 'x')
+            
+        Returns:
+            Dictionary with keys:
+                - success: Boolean indicating operation success
+                - expression: Parsed SymPy expression
+                - domain: String description of the domain
+                - discontinuities: List of discontinuity points
+                - error: Error message if operation failed
         """
         result = {
             'success': False,
@@ -275,7 +333,22 @@ class CalculationEngine:
     
     def signal_processing(self, signal_data: List[float], operation: str, **kwargs) -> Dict[str, Any]:
         """
-        Engineering signal processing operations
+        Engineering signal processing operations.
+        
+        Args:
+            signal_data: List of signal samples
+            operation: Operation type ('fft', 'filter', 'correlation')
+            **kwargs: Additional operation-specific parameters:
+                - sampling_rate: For FFT operations
+                - window_size: For filter operations
+                
+        Returns:
+            Dictionary with keys:
+                - success: Boolean indicating operation success
+                - processed_signal: Processed signal data
+                - frequency_domain: Frequency domain analysis results
+                - filter_response: Filter response data
+                - error: Error message if operation failed
         """
         result = {
             'success': False,
@@ -286,7 +359,6 @@ class CalculationEngine:
         }
         
         try:
-            import numpy as np
             signal = np.array(signal_data)
             
             if operation == 'fft':
@@ -319,7 +391,23 @@ class CalculationEngine:
     
     def control_systems(self, transfer_function: str, operation: str, **kwargs) -> Dict[str, Any]:
         """
-        Control systems engineering calculations
+        Control systems engineering calculations.
+        
+        Args:
+            transfer_function: Transfer function string in Laplace domain
+            operation: Operation type ('step_response', 'stability')
+            **kwargs: Additional operation-specific parameters:
+                - time_max: Maximum simulation time
+                - points: Number of time points
+                
+        Returns:
+            Dictionary with keys:
+                - success: Boolean indicating operation success
+                - step_response: Step response time-domain data
+                - impulse_response: Impulse response data
+                - bode_plot: Bode plot data
+                - stability: Stability analysis results
+                - error: Error message if operation failed
         """
         result = {
             'success': False,
@@ -333,16 +421,26 @@ class CalculationEngine:
         try:
             # Parse transfer function (simplified)
             s = sp.Symbol('s')
-            tf = _cached_parse(transfer_function.replace('s', str(s)))
+            tf = _cached_parse(transfer_function)
             
             if operation == 'step_response':
-                # Simplified step response calculation
                 time_points = np.linspace(0, kwargs.get('time_max', 10), kwargs.get('points', 100))
-                # This is a simplified implementation
-                result['step_response'] = {
-                    'time': time_points.tolist(),
-                    'amplitude': np.exp(-time_points).tolist()  # Example exponential response
-                }
+                t = sp.Symbol('t', real=True, positive=True)
+
+                try:
+                    step_tf = tf / s  # Multiply by 1/s for unit step input
+                    time_response = sp.inverse_laplace_transform(step_tf, s, t)
+                    step_func = sp.lambdify(t, time_response, modules=['numpy'])
+                    amplitudes = np.real(step_func(time_points))
+
+                    result['step_response'] = {
+                        'time': time_points.tolist(),
+                        'amplitude': amplitudes.tolist(),
+                        'response_expression': str(time_response)
+                    }
+                except Exception as transform_err:
+                    result['error'] = f"Step response calculation failed: {transform_err}"
+                    return result
                 
             elif operation == 'stability':
                 # Check poles (denominator roots)
@@ -357,10 +455,30 @@ class CalculationEngine:
             result['error'] = str(e)
         
         return result
+
+    def clear_cached_parses(self) -> None:
+        """Clear cached expression parses when parser configuration changes."""
+        _cached_parse.cache_clear()
     
     def structural_analysis(self, beam_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Basic structural engineering calculations
+        Basic structural engineering calculations.
+        
+        Args:
+            beam_data: Dictionary containing beam parameters:
+                - length: Beam length in meters
+                - load: Applied load in Newtons
+                - elastic_modulus: Young's modulus in Pa
+                - moment_of_inertia: Second moment of area in m^4
+                
+        Returns:
+            Dictionary with keys:
+                - success: Boolean indicating operation success
+                - deflection: Deflection profile data
+                - stress: Stress distribution
+                - moment: Bending moment data
+                - shear: Shear force data
+                - error: Error message if operation failed
         """
         result = {
             'success': False,
@@ -377,6 +495,11 @@ class CalculationEngine:
             load = beam_data.get('load', 1000)  # Newtons
             E = beam_data.get('elastic_modulus', 200e9)  # Pa (steel)
             I = beam_data.get('moment_of_inertia', 1e-6)  # m^4
+            
+            # Validate parameters
+            if length <= 0 or E <= 0 or I <= 0:
+                result['error'] = "Invalid parameters: length, E, and I must be positive"
+                return result
             
             # Simply supported beam with point load at center
             x = np.linspace(0, length, 100)
@@ -411,7 +534,24 @@ class CalculationEngine:
     
     def thermodynamics(self, process_type: str, state_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Thermodynamic process calculations
+        Thermodynamic process calculations.
+        
+        Args:
+            process_type: Type of process ('isothermal', 'adiabatic', 'isobaric', 'isochoric')
+            state_data: Dictionary containing initial state parameters:
+                - pressure1: Initial pressure in Pa
+                - volume1: Initial volume in m^3
+                - temperature1: Initial temperature in K
+                - volume2 or temperature2: Final state parameter
+                
+        Returns:
+            Dictionary with keys:
+                - success: Boolean indicating operation success
+                - final_state: Final thermodynamic state
+                - work_done: Work done by/on system in Joules
+                - heat_transfer: Heat transfer amount
+                - efficiency: Process efficiency
+                - error: Error message if operation failed
         """
         result = {
             'success': False,
@@ -441,6 +581,8 @@ class CalculationEngine:
                 
             elif process_type == 'adiabatic':
                 # PV^γ = constant
+                if gamma == 1:
+                    raise InvalidInputError("gamma", str(gamma), "value not equal to 1")
                 V2 = state_data.get('volume2', 0.002)
                 P2 = P1 * (V1 / V2) ** gamma
                 T2 = T1 * (V1 / V2) ** (gamma - 1)
@@ -471,7 +613,25 @@ class CalculationEngine:
     
     def electrical_circuits(self, circuit_type: str, components: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Electrical circuit analysis
+        Electrical circuit analysis.
+        
+        Args:
+            circuit_type: Type of circuit ('rlc_series', etc.)
+            components: Dictionary containing circuit parameters:
+                - resistance: Resistance in Ohms
+                - inductance: Inductance in Henry
+                - capacitance: Capacitance in Farad
+                - frequency: Operating frequency in Hz
+                - voltage: Applied voltage in Volts
+                
+        Returns:
+            Dictionary with keys:
+                - success: Boolean indicating operation success
+                - impedance: Complex impedance data
+                - current: Current magnitude and phase
+                - power: Power dissipation
+                - frequency_response: Frequency response data
+                - error: Error message if operation failed
         """
         result = {
             'success': False,
@@ -529,34 +689,76 @@ class CalculationEngine:
     
     # Wrapper methods for compatibility with UI/tests
     def simplify(self, expression: str) -> Any:
-        """Wrapper for simplify_expression for compatibility"""
+        """
+        Wrapper for simplify_expression for compatibility.
+        
+        Args:
+            expression: Mathematical expression string
+            
+        Returns:
+            Simplified SymPy expression or None
+            
+        Raises:
+            InvalidInputError: If expression cannot be simplified
+        """
         result = self.simplify_expression(expression)
         if result['success']:
             return result['simplified']
         if result.get('error'):
-            raise ValueError(result['error'])
+            raise InvalidInputError("expression", expression, "valid mathematical expression")
         return None
     
     def expand(self, expression: str) -> Any:
-        """Wrapper for expand_expression for compatibility"""
+        """
+        Wrapper for expand_expression for compatibility.
+        
+        Args:
+            expression: Mathematical expression string
+            
+        Returns:
+            Expanded SymPy expression or None
+            
+        Raises:
+            InvalidInputError: If expression cannot be expanded
+        """
         result = self.expand_expression(expression)
         if result['success']:
             return result['expanded']
         if result.get('error'):
-            raise ValueError(result['error'])
+            raise InvalidInputError("expression", expression, "valid mathematical expression")
         return None
     
     def factor(self, expression: str) -> Any:
-        """Wrapper for factor_expression for compatibility"""
+        """
+        Wrapper for factor_expression for compatibility.
+        
+        Args:
+            expression: Mathematical expression string
+            
+        Returns:
+            Factored SymPy expression or None
+            
+        Raises:
+            InvalidInputError: If expression cannot be factored
+        """
         result = self.factor_expression(expression)
         if result['success']:
             return result['factored']
         if result.get('error'):
-            raise ValueError(result['error'])
+            raise InvalidInputError("expression", expression, "valid mathematical expression")
         return None
     
     def evaluate_with_variables(self, expression: str, variables: Dict[str, float]) -> Any:
-        """Wrapper for evaluate with variables for compatibility"""
+        """
+        Wrapper for evaluate with variables for compatibility.
+        
+        Args:
+            expression: Mathematical expression string
+            variables: Dictionary mapping variable names to numeric values
+            
+        Returns:
+            Evaluation result dictionary
+        """
         return self.evaluate(expression, variables)
 
 # Global calculation engine instance

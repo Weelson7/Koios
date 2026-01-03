@@ -5,6 +5,15 @@ import math
 import random
 from dataclasses import dataclass
 from enum import Enum
+from utils.exceptions import (
+    InvalidInputError, NumericalInstabilityError, ConfigurationError
+)
+
+# Module-level constants for hardcoded values
+RECORDING_INTERVAL = 100  # Record results every N steps
+HISTORY_SIZE = 100  # Size of history buffer for last N values
+NUMERICAL_TOLERANCE = 1e-10  # Tolerance for floating point comparisons in entropy calculations
+SIMULATION_TIME_STEP = 1e-15  # Default time step for molecular dynamics simulations (seconds)
 
 class StatisticalMethod(Enum):
     """Available statistical mechanics methods"""
@@ -59,7 +68,7 @@ class StatisticalMechanicsEngine:
             avg_energy = np.sum(E * probabilities)
             
             # Calculate entropy
-            S = -self.k_B * np.sum(probabilities * np.log(probabilities + 1e-10))
+            S = -self.k_B * np.sum(probabilities * np.log(probabilities + NUMERICAL_TOLERANCE))
             
             results = {
                 'energies': E.tolist(),
@@ -179,7 +188,7 @@ class StatisticalMechanicsEngine:
                     current_energy = new_energy
                     accepted_moves += 1
                 
-                if step % 100 == 0:  # Record every 100 steps
+                if step % RECORDING_INTERVAL == 0:  # Record every N steps
                     states_history.append(current_state)
                     energy_history.append(current_energy)
             
@@ -194,7 +203,7 @@ class StatisticalMechanicsEngine:
                 'energy_variance': energy_variance,
                 'specific_heat': specific_heat,
                 'acceptance_rate': accepted_moves / n_steps,
-                'energy_history': energy_history[-100:],  # Last 100 values
+                'energy_history': energy_history[-HISTORY_SIZE:],  # Last N values
                 'final_state': current_state,
                 'temperature': temperature,
                 'n_steps': n_steps
@@ -250,7 +259,7 @@ class StatisticalMechanicsEngine:
                     spins[i, j] *= -1
                 
                 # Record observables
-                if step % 100 == 0:
+                if step % RECORDING_INTERVAL == 0:
                     magnetization = np.mean(spins)
                     energy = self._calculate_ising_energy(spins, h_field)
                     magnetization_history.append(magnetization)
@@ -290,7 +299,7 @@ class StatisticalMechanicsEngine:
             )
     
     def molecular_dynamics(self, particles: List[Dict], potential_function: Callable,
-                         time_step: float = 1e-15, n_steps: int = 1000,
+                         time_step: float = SIMULATION_TIME_STEP, n_steps: int = 1000,
                          temperature: Optional[float] = None) -> StatMechResult:
         """
         Perform molecular dynamics simulation
@@ -326,7 +335,7 @@ class StatisticalMechanicsEngine:
                 velocities += 0.5 * new_forces / masses[:, np.newaxis] * time_step
                 
                 # Temperature control (if requested)
-                if temperature is not None and step % 100 == 0:
+                if temperature is not None and step % RECORDING_INTERVAL == 0:
                     velocities = self._rescale_velocities(velocities, masses, temperature)
                 
                 # Record data
@@ -335,7 +344,7 @@ class StatisticalMechanicsEngine:
                     total_energy = kinetic_energy + potential_energy
                     energy_history.append(total_energy)
                     
-                if step % 100 == 0:
+                if step % RECORDING_INTERVAL == 0:
                     position_history.append(positions.copy())
             
             # Calculate final properties

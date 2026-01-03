@@ -3,6 +3,14 @@ import numpy as np
 import sympy as sp
 from core.tensor_calculus_engine import TensorCalculusEngine, Tensor, TensorType, StandardMetrics
 from utils.ui_helpers import run_task, copy_button
+from utils.exceptions import InvalidDimensionError, InvalidInputError
+
+# Example metric tensors
+TENSOR_EXAMPLES = {
+    "Euclidean 2D": {"dim": 2, "metric": [[1, 0], [0, 1]], "coords": ["x", "y"]},
+    "Polar Coordinates": {"dim": 2, "metric": [[1, 0], [0, "r**2"]], "coords": ["r", "theta"]},
+    "Minkowski 2D": {"dim": 2, "metric": [[-1, 0], [0, 1]], "coords": ["t", "x"]},
+}
 
 def render_tensor_calculus_panel():
     """Render the tensor calculus interface"""
@@ -13,6 +21,23 @@ def render_tensor_calculus_panel():
         <p style='margin: 0.5rem 0 0 0; color: #B0BEC5;'>Advanced tensor operations and differential geometry</p>
     </div>
     """, unsafe_allow_html=True)
+    
+    # Example selector
+    st.markdown("**Load Example:**")
+    col_ex1, col_ex2 = st.columns([3, 1])
+    with col_ex1:
+        example_choice = st.selectbox(
+            "Choose an example:",
+            [""] + list(TENSOR_EXAMPLES.keys()),
+            help="Select an example metric tensor"
+        )
+    with col_ex2:
+        if st.button("Load Example", disabled=not example_choice):
+            if example_choice in TENSOR_EXAMPLES:
+                st.session_state.tensor_example = TENSOR_EXAMPLES[example_choice]
+                st.rerun()
+    
+    st.markdown("---")
     
     # Create tabs for different operations
     tabs = st.tabs([
@@ -42,16 +67,23 @@ def render_metric_tensors():
     """Metric tensor and basic tensor operations"""
     st.subheader("Metric Tensor & Basic Operations")
     
+    # Get example data from session state
+    example_data = st.session_state.get("tensor_example", {})
+    default_dim = example_data.get("dim", 2)
+    default_coords = example_data.get("coords", ["x", "y"])
+    default_metric = example_data.get("metric", [[1, 0], [0, 1]])
+    
     col1, col2 = st.columns(2)
     
     with col1:
         st.write("**Define Coordinate System**")
-        n_dim = st.number_input("Number of dimensions", min_value=2, max_value=4, value=2)
+        n_dim = st.number_input("Number of dimensions", min_value=2, max_value=4, value=default_dim)
         
         # Define coordinates
         coord_names = []
         for i in range(n_dim):
-            coord = st.text_input(f"Coordinate {i+1}", value=['x', 'y', 'z', 't'][i] if i < 4 else f'x{i}')
+            default_val = default_coords[i] if i < len(default_coords) else (['x', 'y', 'z', 't'][i] if i < 4 else f'x{i}')
+            coord = st.text_input(f"Coordinate {i+1}", value=default_val, key=f"coord_{i}")
             coord_names.append(coord)
         
         # Create symbolic coordinates
