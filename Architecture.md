@@ -1262,3 +1262,42 @@ app.py (entry point)
 - **Visualization:** Plotly, Matplotlib
 - **Matrix Operations:** NumPy, SymPy
 - **Sparse Matrices:** SciPy sparse
+---
+
+## Coding Standards
+
+### Docstring Format
+
+All modules use **Google-style docstrings** for consistency:
+
+\\\python
+def method_name(self, param1: Type, param2: Type) -> ReturnType:
+    ""  
+    Brief description of what the method does.
+    
+    Longer description if needed, explaining implementation details
+    or important behavior.
+    
+    Args:
+        param1: Description of first parameter
+        param2: Description of second parameter
+        
+    Returns:
+        Description of return value
+        
+    Raises:
+        ExceptionType: When this exception occurs
+    ""
+\\\`n
+**Standardized Modules:**
+- core/calculation_engine.py - All methods follow Google-style docstrings
+- utils/math_helpers.py - All static methods follow Google-style docstrings
+
+### Return Value Consistency
+
+Core engines return result dictionaries with standard keys:
+- success: bool - Operation success indicator
+- error: str | None - Error message if operation failed
+- Operation-specific keys (e.g., result, derivative, matrix)
+
+This consistent structure simplifies error handling and UI integration.
