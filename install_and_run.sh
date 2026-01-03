@@ -132,16 +132,12 @@ echo "Starting Koios Application"
 echo "========================================"
 echo ""
 echo "[INFO] Launching Streamlit application..."
-echo "[INFO] The Koios app will open in your default browser at http://localhost:5000"
+echo "[INFO] Server running at http://localhost:5000"
 echo "[INFO] Press Ctrl+C to stop the server"
 echo ""
-echo ""
-echo "You can now view the Koios app in your browser."
-echo "  Local URL: http://localhost:5000"
-echo ""
 
-# Run the application
-python -m streamlit run app.py --server.headless=false --server.address=localhost --server.port=5000 --logger.level=error
+# Run the application (filter out Streamlit's default browser message)
+python -m streamlit run app.py --server.headless=true --server.address=localhost --server.port=5000 --logger.level=error 2>&1 | grep -v "You can now view your Streamlit app in your browser" | grep -v "Local URL:" | grep -v "Network URL:"
 
 if [ $? -ne 0 ]; then
     echo ""
